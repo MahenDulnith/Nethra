@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -171,32 +171,56 @@ class ContextSceneTracker:
         """Handles conversational 'Where am I?' query."""
         labels = list({d.label for d in detections})
         detected_summary = ", ".join(labels) if labels else "no immediate objects"
-        return f"Location: {self.assumed_location}. In front of you: {detected_summary}."
+        return f"Location: {self.assumed_location} | In view: {detected_summary}"
 
 
-def open_camera(camera_idx: int) -> Tuple[Optional[cv2.VideoCapture], int]:
-    """Attempts to open the requested camera index with automatic fallback."""
-    print(f"[Camera] Trying camera index {camera_idx} (e.g., iPhone Continuity Camera)...")
-    cap = cv2.VideoCapture(camera_idx)
+def get_camera_name(idx: int) -> str:
+    """Returns human-friendly camera name on macOS."""
+    if idx == 1:
+        return "iPhone (Continuity Camera / Ultra-Wide)"
+    elif idx == 0:
+        return "Mac FaceTime HD Camera"
+    elif idx < 0:
+        return "Synthetic Mock Stream"
+    return f"Camera #{idx}"
+
+
+def probe_available_cameras(max_probe: int = 4) -> List[int]:
+    """Scans and returns all available camera indices."""
+    available = []
+    for idx in range(max_probe):
+        cap = cv2.VideoCapture(idx)
+        if cap.isOpened():
+            ret, _ = cap.read()
+            if ret:
+                available.append(idx)
+            cap.release()
+    return available
+
+
+def open_camera(preferred_idx: int) -> Tuple[Optional[cv2.VideoCapture], int]:
+    """Attempts to open the preferred camera with automatic fallback."""
+    print(f"[Camera] Attempting camera index {preferred_idx} ({get_camera_name(preferred_idx)})...")
+    cap = cv2.VideoCapture(preferred_idx)
     if cap.isOpened():
         ret, frame = cap.read()
         if ret and frame is not None:
-            print(f"[Camera] Successfully connected to camera index {camera_idx}.")
-            return cap, camera_idx
+            print(f"[Camera] Successfully opened {get_camera_name(preferred_idx)}.")
+            return cap, preferred_idx
         cap.release()
 
-    # Try fallback indices
-    fallbacks = [0, 1, 2]
-    if camera_idx in fallbacks:
-        fallbacks.remove(camera_idx)
+    # Fallback to alternate camera indices
+    fallbacks = [1, 0, 2]
+    if preferred_idx in fallbacks:
+        fallbacks.remove(preferred_idx)
 
     for idx in fallbacks:
-        print(f"[Camera] Fallback: Trying camera index {idx}...")
+        print(f"[Camera] Trying alternate index {idx} ({get_camera_name(idx)})...")
         cap = cv2.VideoCapture(idx)
         if cap.isOpened():
             ret, frame = cap.read()
             if ret and frame is not None:
-                print(f"[Camera] Connected to fallback camera index {idx}.")
+                print(f"[Camera] Successfully opened {get_camera_name(idx)}.")
                 return cap, idx
             cap.release()
 
@@ -205,13 +229,11 @@ def open_camera(camera_idx: int) -> Tuple[Optional[cv2.VideoCapture], int]:
 
 def create_mock_frame(width: int = 640, height: int = 480, frame_count: int = 0) -> np.ndarray:
     """Generates synthetic frames for headless testing or when camera is unavailable."""
-    frame = np.full((height, width, 3), 40, dtype=np.uint8)
+    frame = np.full((height, width, 3), 35, dtype=np.uint8)
 
-    # Draw simulated walking corridor
     pts = np.array([[width * 0.3, height], [width * 0.45, height * 0.4], [width * 0.55, height * 0.4], [width * 0.7, height]], np.int32)
-    cv2.fillPoly(frame, [pts], (70, 70, 70))
+    cv2.fillPoly(frame, [pts], (65, 65, 65))
 
-    # Move a simulated obstacle across zones
     cycle = (frame_count % 150) / 150.0
     x_pos = int(width * 0.15 + (width * 0.7 * cycle))
     y_pos = int(height * 0.5)
@@ -231,98 +253,132 @@ def render_hud(
     fps: float,
     camera_idx: int,
     location_msg: Optional[str] = None,
+    toast_msg: Optional[str] = None,
 ) -> np.ndarray:
-    """Renders visual zone boundaries, bounding boxes, and simulated wristband PWM meters."""
+    """Renders a modern, high-contrast assistive vision HUD."""
     h, w, _ = frame.shape
     overlay = frame.copy()
 
     one_third = int(w / 3.0)
     two_thirds = int((w * 2.0) / 3.0)
 
-    # 1. Zone Divider Lines (Dashed / Transparent)
-    cv2.line(overlay, (one_third, 0), (one_third, h), (100, 100, 100), 1)
-    cv2.line(overlay, (two_thirds, 0), (two_thirds, h), (100, 100, 100), 1)
+    # 1. TOP STATUS BAR (Semi-transparent dark header)
+    top_bar_h = 44
+    cv2.rectangle(overlay, (0, 0), (w, top_bar_h), (18, 18, 22), -1)
 
-    # Zone Labels at the top
-    cv2.putText(overlay, "LEFT ZONE", (15, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1)
-    cv2.putText(overlay, "CENTER (AHEAD)", (one_third + 20, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1)
-    cv2.putText(overlay, "RIGHT ZONE", (two_thirds + 15, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1)
+    # Title & Brand
+    cv2.putText(overlay, "PulsePath AI", (14, 27), cv2.FONT_HERSHEY_DUPLEX, 0.65, (0, 230, 255), 1, cv2.LINE_AA)
 
-    # 2. Draw Detections
+    # Camera Device Badge
+    cam_name = get_camera_name(camera_idx)
+    cam_badge_color = (0, 200, 100) if camera_idx == 1 else (180, 180, 180)
+    cv2.putText(overlay, f"Cam: {cam_name}", (160, 27), cv2.FONT_HERSHEY_SIMPLEX, 0.44, cam_badge_color, 1, cv2.LINE_AA)
+
+    # FPS Indicator
+    fps_color = (0, 255, 120) if fps >= 20 else ((0, 200, 255) if fps >= 10 else (0, 100, 255))
+    cv2.putText(overlay, f"{fps:4.1f} FPS", (w - 85, 27), cv2.FONT_HERSHEY_SIMPLEX, 0.48, fps_color, 1, cv2.LINE_AA)
+
+    # 2. ZONE DIVIDERS & LABELS
+    cv2.line(overlay, (one_third, top_bar_h), (one_third, h - 85), (80, 80, 95), 1)
+    cv2.line(overlay, (two_thirds, top_bar_h), (two_thirds, h - 85), (80, 80, 95), 1)
+
+    # Zone Header Badges
+    left_active = haptics.left_pwm > 0 and haptics.left_pwm != haptics.right_pwm
+    center_active = haptics.left_pwm > 0 and haptics.left_pwm == haptics.right_pwm
+    right_active = haptics.right_pwm > 0 and haptics.left_pwm != haptics.right_pwm
+
+    cv2.putText(overlay, "< LEFT ZONE", (18, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 180, 255) if left_active else (140, 140, 150), 1, cv2.LINE_AA)
+    cv2.putText(overlay, "^ CENTER (AHEAD)", (one_third + 20, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 100, 255) if center_active else (140, 140, 150), 1, cv2.LINE_AA)
+    cv2.putText(overlay, "RIGHT ZONE >", (two_thirds + 20, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 180, 255) if right_active else (140, 140, 150), 1, cv2.LINE_AA)
+
+    # 3. BOUNDING BOXES
     for det in detections:
         x1, y1, x2, y2 = det.box
-        # Color coding: Green for minor, Orange for medium, Red for close threat
         if det.pwm_intensity > 60:
-            box_color = (0, 0, 255)  # Red
+            box_color = (0, 50, 255)    # Urgent Red
         elif det.pwm_intensity > 25:
-            box_color = (0, 165, 255)  # Orange
+            box_color = (0, 165, 255)   # Amber Orange
         else:
-            box_color = (0, 255, 0)  # Green
+            box_color = (50, 220, 100)  # Gentle Green
 
         cv2.rectangle(overlay, (x1, y1), (x2, y2), box_color, 2)
-        label_text = f"{det.label} {det.confidence:.2f} | PWM: {det.pwm_intensity:.0f}%"
-        cv2.putText(overlay, label_text, (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
 
-    # 3. Bottom HUD Bar for Simulated Dual-Wristband Haptics
-    hud_bar_height = 80
-    cv2.rectangle(overlay, (0, h - hud_bar_height), (w, h), (20, 20, 20), -1)
+        # Label tag pill
+        tag_text = f"{det.label} {det.confidence:.0%} | {det.pwm_intensity:.0f}% PWM"
+        (tw, th), _ = cv2.getTextSize(tag_text, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
+        tag_y = max(top_bar_h + 16, y1 - 6)
+        cv2.rectangle(overlay, (x1, tag_y - th - 4), (x1 + tw + 8, tag_y + 2), box_color, -1)
+        cv2.putText(overlay, tag_text, (x1 + 4, tag_y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 0), 1, cv2.LINE_AA)
+
+    # 4. BOTTOM HUD BAR (Haptic Vibration Meters & Telemetry)
+    hud_bar_h = 88
+    cv2.rectangle(overlay, (0, h - hud_bar_h), (w, h), (18, 18, 22), -1)
 
     # Left Wristband PWM Meter
-    left_bar_w = int((w * 0.35) * (haptics.left_pwm / 100.0))
-    cv2.putText(overlay, f"LEFT WRISTBAND: {haptics.left_pwm:.0f}% PWM", (15, h - 55), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1)
-    cv2.rectangle(overlay, (15, h - 45), (int(w * 0.35) + 15, h - 25), (60, 60, 60), 1)
-    left_color = (0, int(255 - (haptics.left_pwm * 2.55)), int(haptics.left_pwm * 2.55))
-    if left_bar_w > 0:
-        cv2.rectangle(overlay, (15, h - 45), (15 + left_bar_w, h - 25), left_color, -1)
+    meter_w = int(w * 0.32)
+    left_fill = int(meter_w * (haptics.left_pwm / 100.0))
+    cv2.putText(overlay, f"LEFT WRIST: {haptics.left_pwm:4.1f}% PWM", (16, h - 58), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (210, 210, 220), 1, cv2.LINE_AA)
+    cv2.rectangle(overlay, (16, h - 48), (16 + meter_w, h - 30), (50, 50, 60), 1)
+    if left_fill > 0:
+        cv2.rectangle(overlay, (16, h - 48), (16 + left_fill, h - 30), (0, 180, 255) if haptics.left_pwm < 50 else (0, 70, 255), -1)
 
     # Right Wristband PWM Meter
-    right_start_x = int(w * 0.6)
-    right_bar_w = int((w * 0.35) * (haptics.right_pwm / 100.0))
-    cv2.putText(overlay, f"RIGHT WRISTBAND: {haptics.right_pwm:.0f}% PWM", (right_start_x, h - 55), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1)
-    cv2.rectangle(overlay, (right_start_x, h - 45), (right_start_x + int(w * 0.35), h - 25), (60, 60, 60), 1)
-    right_color = (0, int(255 - (haptics.right_pwm * 2.55)), int(haptics.right_pwm * 2.55))
-    if right_bar_w > 0:
-        cv2.rectangle(overlay, (right_start_x, h - 45), (right_start_x + right_bar_w, h - 25), right_color, -1)
+    right_x = w - meter_w - 16
+    right_fill = int(meter_w * (haptics.right_pwm / 100.0))
+    cv2.putText(overlay, f"RIGHT WRIST: {haptics.right_pwm:4.1f}% PWM", (right_x, h - 58), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (210, 210, 220), 1, cv2.LINE_AA)
+    cv2.rectangle(overlay, (right_x, h - 48), (right_x + meter_w, h - 30), (50, 50, 60), 1)
+    if right_fill > 0:
+        cv2.rectangle(overlay, (right_x, h - 48), (right_x + right_fill, h - 30), (0, 180, 255) if haptics.right_pwm < 50 else (0, 70, 255), -1)
 
-    # Center Status Telemetry
+    # Center Telemetry Status
     threat_text = haptics.active_threat or "Path Clear"
-    cv2.putText(overlay, f"Threat: {threat_text}", (int(w * 0.37), h - 55), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1)
-    cv2.putText(overlay, f"Cam: #{camera_idx} | FPS: {fps:.1f}", (int(w * 0.37), h - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1)
+    threat_color = (0, 80, 255) if haptics.active_threat else (50, 220, 100)
+    cv2.putText(overlay, threat_text, (int(w * 0.37), h - 55), cv2.FONT_HERSHEY_SIMPLEX, 0.46, threat_color, 1, cv2.LINE_AA)
 
-    # 4. Context Notification Banner (Top Center)
+    # Active objects summary
+    labels_summary = ", ".join(list({d.label for d in detections})) if detections else "None in view"
+    if len(labels_summary) > 28:
+        labels_summary = labels_summary[:25] + "..."
+    cv2.putText(overlay, f"Seen: {labels_summary}", (int(w * 0.37), h - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (160, 160, 175), 1, cv2.LINE_AA)
+
+    # Keyboard helper shortcuts line at the very bottom
+    cv2.putText(overlay, "[C] Switch Camera   |   [W] Where Am I?   |   [Q] Exit", (16, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 120, 135), 1, cv2.LINE_AA)
+
+    # 5. TOAST & NOTIFICATION BANNERS
+    if toast_msg:
+        cv2.rectangle(overlay, (w // 8, 50), (7 * w // 8, 86), (20, 120, 220), -1)
+        cv2.putText(overlay, toast_msg, (w // 8 + 14, 74), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 1, cv2.LINE_AA)
+
     if context_msg:
-        cv2.rectangle(overlay, (w // 6, 40), (5 * w // 6, 75), (40, 120, 40), -1)
-        cv2.putText(overlay, context_msg, (w // 6 + 10, 63), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+        cv2.rectangle(overlay, (w // 8, 92), (7 * w // 8, 128), (40, 140, 40), -1)
+        cv2.putText(overlay, context_msg, (w // 8 + 14, 116), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 2, cv2.LINE_AA)
 
     if location_msg:
-        cv2.rectangle(overlay, (50, 85), (w - 50, 115), (100, 50, 0), -1)
-        cv2.putText(overlay, location_msg, (60, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1)
+        cv2.rectangle(overlay, (40, 92), (w - 40, 128), (140, 60, 0), -1)
+        cv2.putText(overlay, location_msg, (50, 116), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255), 1, cv2.LINE_AA)
 
     return overlay
 
 
 def run_pipeline(args: argparse.Namespace):
     """Main execution loop for YOLO11 assistive vision and spatial routing."""
-    # 1. Load YOLO11 Model
     print(f"[Model] Loading YOLO11 model: {args.model}...")
     try:
         from ultralytics import YOLO
         model = YOLO(args.model)
-        # Ultralytics class dictionary
         class_names = model.names if hasattr(model, "names") else {}
     except Exception as exc:
         print(f"[Model Error] Could not load YOLO model: {exc}")
-        print("[Model Error] Ensure ultralytics is installed via '.venv/bin/pip install ultralytics'")
         sys.exit(1)
 
-    # 2. Video Capture
     use_mock = args.mock
     cap = None
-    actual_cam_idx = -1
+    current_cam_idx = args.camera
+
     if not use_mock:
-        cap, actual_cam_idx = open_camera(args.camera)
+        cap, current_cam_idx = open_camera(current_cam_idx)
         if cap is None:
-            print("[Warning] No video camera could be opened. Falling back to synthetic mock stream.")
+            print("[Warning] No video camera opened. Falling back to synthetic mock stream.")
             use_mock = True
         else:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
@@ -333,10 +389,10 @@ def run_pipeline(args: argparse.Namespace):
 
     print("\n" + "=" * 65)
     print(" Assistive Vision Prototype (PulsePath) Active")
-    print(" - Detecting all 80 COCO classes")
-    print(" - Dual-wristband spatial routing (Left/Center/Right + PWM %)")
-    print(" - Context awareness (Bed detection, Location queries)")
-    print(" Controls: Press 'q' to exit | 'w' for 'Where am I?' query | 'm' to mute")
+    print(f" - Active Camera: {get_camera_name(current_cam_idx)}")
+    print(" - Press 'c' to cycle cameras (iPhone Continuity <-> Mac FaceTime)")
+    print(" - Press 'w' for 'Where am I?' query")
+    print(" - Press 'q' to quit")
     print("=" * 65 + "\n")
 
     frame_count = 0
@@ -344,22 +400,24 @@ def run_pipeline(args: argparse.Namespace):
     current_fps = 0.0
     location_banner = None
     location_banner_time = 0.0
+    toast_banner = f"Connected: {get_camera_name(current_cam_idx)}"
+    toast_time = time.time()
 
     try:
         while True:
             frame_count += 1
             if use_mock:
                 frame = create_mock_frame(args.width, args.height, frame_count)
-                time.sleep(0.03)  # Simulate ~30 FPS
+                time.sleep(0.03)
             else:
                 ret, frame = cap.read()
                 if not ret or frame is None:
-                    print("[Stream] Failed to read frame from camera.")
-                    break
+                    time.sleep(0.05)
+                    continue
 
             fh, fw, _ = frame.shape
 
-            # Run YOLO11 inference (all 80 classes)
+            # Run YOLO11 inference across all 80 classes
             results = model(frame, conf=args.conf, verbose=False)
             boxes: List[Tuple[int, int, int, int]] = []
             scores: List[float] = []
@@ -372,7 +430,7 @@ def run_pipeline(args: argparse.Namespace):
                     scores.append(float(b.conf[0].cpu().numpy()))
                     class_ids.append(int(b.cls[0].cpu().numpy()))
 
-            # Compute spatial routing and haptics
+            # Spatial routing & haptics
             detections, haptic_state = router.process_detections(
                 boxes=boxes,
                 scores=scores,
@@ -384,8 +442,6 @@ def run_pipeline(args: argparse.Namespace):
 
             # Context update (bed detection, morning routine)
             context_msg = context_tracker.update(detections)
-            if context_msg:
-                print(f"[Context Announcement] {context_msg}")
 
             # Telemetry printing every 30 frames
             if frame_count % 30 == 0:
@@ -397,26 +453,29 @@ def run_pipeline(args: argparse.Namespace):
                     f"{threat_info}"
                 )
 
-            # Clear temporary location query banner after 5 seconds
-            if location_banner and (time.time() - location_banner_time > 5.0):
+            # Timed banners
+            now = time.time()
+            if location_banner and (now - location_banner_time > 5.0):
                 location_banner = None
+            if toast_banner and (now - toast_time > 4.0):
+                toast_banner = None
 
             # Calculate FPS
-            now = time.time()
             dt = now - prev_time
             prev_time = now
             if dt > 0:
                 current_fps = (current_fps * 0.9) + ((1.0 / dt) * 0.1)
 
-            # Render Visual HUD
+            # Render Modern HUD
             annotated = render_hud(
                 frame=frame,
                 detections=detections,
                 haptics=haptic_state,
                 context_msg=context_msg,
                 fps=current_fps,
-                camera_idx=actual_cam_idx if not use_mock else -1,
+                camera_idx=current_cam_idx if not use_mock else -1,
                 location_msg=location_banner,
+                toast_msg=toast_banner,
             )
 
             if not args.headless:
@@ -429,10 +488,26 @@ def run_pipeline(args: argparse.Namespace):
                     location_banner = context_tracker.query_location(detections)
                     location_banner_time = time.time()
                     print(f"[Location Query Response] {location_banner}")
+                elif key == ord("c") and not use_mock:
+                    # Switch Camera (0 <-> 1)
+                    new_idx = 0 if current_cam_idx == 1 else 1
+                    print(f"\n[Camera] User requested switch to index {new_idx} ({get_camera_name(new_idx)})...")
+                    if cap is not None:
+                        cap.release()
+                    new_cap, actual_new = open_camera(new_idx)
+                    if new_cap is not None:
+                        cap = new_cap
+                        current_cam_idx = actual_new
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
+                        toast_banner = f"Switched: {get_camera_name(current_cam_idx)}"
+                        toast_time = time.time()
+                    else:
+                        print(f"[Camera Error] Could not switch to index {new_idx}.")
+                        toast_banner = f"Error opening camera #{new_idx}"
+                        toast_time = time.time()
             else:
-                # In headless / test mode, run requested number of frames or break
                 if args.max_frames and frame_count >= args.max_frames:
-                    print(f"[Pipeline] Reached max frames ({args.max_frames}). Completed successfully.")
                     break
 
     finally:
@@ -443,7 +518,8 @@ def run_pipeline(args: argparse.Namespace):
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="PulsePath Assistive Vision Prototype")
-    parser.add_argument("--camera", type=int, default=1, help="Camera index (default: 1 for Continuity Camera)")
+    # Default camera set to 1 (iPhone Continuity Camera)
+    parser.add_argument("--camera", type=int, default=1, help="Camera index (default: 1 for iPhone Continuity Camera)")
     parser.add_argument("--conf", type=float, default=0.35, help="YOLO confidence threshold (default: 0.35)")
     parser.add_argument("--model", type=str, default="yolo11n.pt", help="YOLO model path or weight name")
     parser.add_argument("--width", type=int, default=640, help="Frame width (default: 640)")
