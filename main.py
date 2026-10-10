@@ -518,10 +518,13 @@ def run_pipeline(args: argparse.Namespace):
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="PulsePath Assistive Vision Prototype")
+    # Auto-detect custom trained model
+    import os
+    default_model = "pulsepath_doors_yolo11n.pt" if os.path.exists("pulsepath_doors_yolo11n.pt") else "yolo11n.pt"
     # Default camera set to 1 (iPhone Continuity Camera)
     parser.add_argument("--camera", type=int, default=1, help="Camera index (default: 1 for iPhone Continuity Camera)")
     parser.add_argument("--conf", type=float, default=0.35, help="YOLO confidence threshold (default: 0.35)")
-    parser.add_argument("--model", type=str, default="yolo11n.pt", help="YOLO model path or weight name")
+    parser.add_argument("--model", type=str, default=default_model, help=f"YOLO model path (default: {default_model})")
     parser.add_argument("--width", type=int, default=640, help="Frame width (default: 640)")
     parser.add_argument("--height", type=int, default=480, help="Frame height (default: 480)")
     parser.add_argument("--mock", action="store_true", help="Run with synthetic test stream")

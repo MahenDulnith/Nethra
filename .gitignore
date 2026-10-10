@@ -14,6 +14,10 @@ __pycache__/
 *.engine
 *.mlpackage
 yolo11n*
+runs/
+datasets/images/
+datasets/labels/
+*.zip
 
 # macOS
 .DS_Store
