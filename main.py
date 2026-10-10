@@ -3,14 +3,18 @@
 
 Real-time Edge-AI spatial obstacle detection, haptic wristband routing,
 and contextual scene awareness for the visually impaired.
+Supports Dual-Model Ensemble: COCO-80 (people, bottles, laptops) +
+Custom Fine-Tuned Model (doors, wardrobes, windows).
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -39,6 +43,51 @@ class HapticFeedbackState:
     right_pwm: float = 0.0  # 0.0 to 100.0%
     active_threat: Optional[str] = None
     closest_distance_ratio: float = 0.0
+
+
+def compute_iou(boxA: Tuple[int, int, int, int], boxB: Tuple[int, int, int, int]) -> float:
+    """Calculates Intersection over Union (IoU) between two bounding boxes."""
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+
+    inter_w = max(0, xB - xA)
+    inter_h = max(0, yB - yA)
+    inter_area = float(inter_w * inter_h)
+
+    boxA_area = float(max(0, boxA[2] - boxA[0]) * max(0, boxA[3] - boxA[1]))
+    boxB_area = float(max(0, boxB[2] - boxB[0]) * max(0, boxB[3] - boxB[1]))
+    union_area = boxA_area + boxB_area - inter_area
+
+    if union_area <= 0.0:
+        return 0.0
+    return inter_area / union_area
+
+
+def merge_candidate_detections(
+    candidates: List[Tuple[Tuple[int, int, int, int], float, str]],
+    iou_thresh: float = 0.45,
+) -> List[Tuple[Tuple[int, int, int, int], float, str]]:
+    """Merges detections from multiple models and eliminates duplicate boxes."""
+    if not candidates:
+        return []
+
+    # Sort descending by confidence score
+    candidates.sort(key=lambda x: x[1], reverse=True)
+    kept: List[Tuple[Tuple[int, int, int, int], float, str]] = []
+
+    for cand in candidates:
+        box, score, label = cand
+        overlap = False
+        for k_box, k_score, k_label in kept:
+            if compute_iou(box, k_box) > iou_thresh:
+                overlap = True
+                break
+        if not overlap:
+            kept.append(cand)
+
+    return kept
 
 
 class SpatialRoutingEngine:
@@ -73,21 +122,31 @@ class SpatialRoutingEngine:
         self,
         boxes: List[Tuple[int, int, int, int]],
         scores: List[float],
-        class_ids: List[int],
-        class_names: Dict[int, str],
-        frame_width: int,
-        frame_height: int,
+        labels: Optional[List[str]] = None,
+        class_ids: Optional[List[int]] = None,
+        class_names: Optional[Dict[int, str]] = None,
+        frame_width: int = 640,
+        frame_height: int = 480,
     ) -> Tuple[List[Detection], HapticFeedbackState]:
         """Processes raw model detections into spatial cues and dual wristband signals."""
         total_frame_area = float(max(1, frame_width * frame_height))
         detections: List[Detection] = []
+
+        # Resolve labels from class_ids and class_names if labels not provided
+        resolved_labels: List[str] = []
+        if labels is not None:
+            resolved_labels = labels
+        elif class_ids is not None and class_names is not None:
+            resolved_labels = [class_names.get(cid, f"obj_{cid}") for cid in class_ids]
+        else:
+            resolved_labels = [f"obj_{i}" for i in range(len(boxes))]
 
         max_left_pwm = 0.0
         max_right_pwm = 0.0
         highest_threat_label = None
         max_threat_area = 0.0
 
-        for box, score, cls_id in zip(boxes, scores, class_ids):
+        for box, score, label in zip(boxes, scores, resolved_labels):
             x1, y1, x2, y2 = box
             w = max(0, x2 - x1)
             h = max(0, y2 - y1)
@@ -96,7 +155,6 @@ class SpatialRoutingEngine:
 
             box_area = float(w * h)
             area_ratio = box_area / total_frame_area
-            label = class_names.get(cls_id, f"obj_{cls_id}")
             zone = self.determine_zone(cx, frame_width)
             pwm = self.calculate_pwm(area_ratio)
 
@@ -185,19 +243,6 @@ def get_camera_name(idx: int) -> str:
     return f"Camera #{idx}"
 
 
-def probe_available_cameras(max_probe: int = 4) -> List[int]:
-    """Scans and returns all available camera indices."""
-    available = []
-    for idx in range(max_probe):
-        cap = cv2.VideoCapture(idx)
-        if cap.isOpened():
-            ret, _ = cap.read()
-            if ret:
-                available.append(idx)
-            cap.release()
-    return available
-
-
 def open_camera(preferred_idx: int) -> Tuple[Optional[cv2.VideoCapture], int]:
     """Attempts to open the preferred camera with automatic fallback."""
     print(f"[Camera] Attempting camera index {preferred_idx} ({get_camera_name(preferred_idx)})...")
@@ -254,6 +299,7 @@ def render_hud(
     camera_idx: int,
     location_msg: Optional[str] = None,
     toast_msg: Optional[str] = None,
+    model_mode_label: str = "Ensemble: COCO-80 + Doors",
 ) -> np.ndarray:
     """Renders a modern, high-contrast assistive vision HUD."""
     h, w, _ = frame.shape
@@ -267,20 +313,23 @@ def render_hud(
     cv2.rectangle(overlay, (0, 0), (w, top_bar_h), (18, 18, 22), -1)
 
     # Title & Brand
-    cv2.putText(overlay, "PulsePath AI", (14, 27), cv2.FONT_HERSHEY_DUPLEX, 0.65, (0, 230, 255), 1, cv2.LINE_AA)
+    cv2.putText(overlay, "PulsePath AI", (14, 27), cv2.FONT_HERSHEY_DUPLEX, 0.62, (0, 230, 255), 1, cv2.LINE_AA)
+
+    # Model Badge
+    cv2.putText(overlay, f"[{model_mode_label}]", (150, 27), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (200, 220, 255), 1, cv2.LINE_AA)
 
     # Camera Device Badge
     cam_name = get_camera_name(camera_idx)
     cam_badge_color = (0, 200, 100) if camera_idx == 1 else (180, 180, 180)
-    cv2.putText(overlay, f"Cam: {cam_name}", (160, 27), cv2.FONT_HERSHEY_SIMPLEX, 0.44, cam_badge_color, 1, cv2.LINE_AA)
+    cv2.putText(overlay, f"Cam: #{camera_idx}", (w - 180, 27), cv2.FONT_HERSHEY_SIMPLEX, 0.42, cam_badge_color, 1, cv2.LINE_AA)
 
     # FPS Indicator
     fps_color = (0, 255, 120) if fps >= 20 else ((0, 200, 255) if fps >= 10 else (0, 100, 255))
-    cv2.putText(overlay, f"{fps:4.1f} FPS", (w - 85, 27), cv2.FONT_HERSHEY_SIMPLEX, 0.48, fps_color, 1, cv2.LINE_AA)
+    cv2.putText(overlay, f"{fps:4.1f} FPS", (w - 85, 27), cv2.FONT_HERSHEY_SIMPLEX, 0.45, fps_color, 1, cv2.LINE_AA)
 
     # 2. ZONE DIVIDERS & LABELS
-    cv2.line(overlay, (one_third, top_bar_h), (one_third, h - 85), (80, 80, 95), 1)
-    cv2.line(overlay, (two_thirds, top_bar_h), (two_thirds, h - 85), (80, 80, 95), 1)
+    cv2.line(overlay, (one_third, top_bar_h), (one_third, h - 88), (80, 80, 95), 1)
+    cv2.line(overlay, (two_thirds, top_bar_h), (two_thirds, h - 88), (80, 80, 95), 1)
 
     # Zone Header Badges
     left_active = haptics.left_pwm > 0 and haptics.left_pwm != haptics.right_pwm
@@ -333,13 +382,13 @@ def render_hud(
     # Center Telemetry Status
     threat_text = haptics.active_threat or "Path Clear"
     threat_color = (0, 80, 255) if haptics.active_threat else (50, 220, 100)
-    cv2.putText(overlay, threat_text, (int(w * 0.37), h - 55), cv2.FONT_HERSHEY_SIMPLEX, 0.46, threat_color, 1, cv2.LINE_AA)
+    cv2.putText(overlay, threat_text, (int(w * 0.36), h - 55), cv2.FONT_HERSHEY_SIMPLEX, 0.44, threat_color, 1, cv2.LINE_AA)
 
     # Active objects summary
     labels_summary = ", ".join(list({d.label for d in detections})) if detections else "None in view"
     if len(labels_summary) > 28:
         labels_summary = labels_summary[:25] + "..."
-    cv2.putText(overlay, f"Seen: {labels_summary}", (int(w * 0.37), h - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (160, 160, 175), 1, cv2.LINE_AA)
+    cv2.putText(overlay, f"Seen: {labels_summary}", (int(w * 0.36), h - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (160, 160, 175), 1, cv2.LINE_AA)
 
     # Keyboard helper shortcuts line at the very bottom
     cv2.putText(overlay, "[C] Switch Camera   |   [W] Where Am I?   |   [Q] Exit", (16, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 120, 135), 1, cv2.LINE_AA)
@@ -362,14 +411,41 @@ def render_hud(
 
 def run_pipeline(args: argparse.Namespace):
     """Main execution loop for YOLO11 assistive vision and spatial routing."""
-    print(f"[Model] Loading YOLO11 model: {args.model}...")
+    from ultralytics import YOLO
+
+    # 1. Initialize Models (Dual-Model Ensemble)
+    model_coco = None
+    model_doors = None
+
+    print(f"[Model 1] Loading Base YOLO11 Nano (COCO 80 classes): {args.coco_model}...")
     try:
-        from ultralytics import YOLO
-        model = YOLO(args.model)
-        class_names = model.names if hasattr(model, "names") else {}
+        model_coco = YOLO(args.coco_model)
+        coco_names = model_coco.names if hasattr(model_coco, "names") else {}
     except Exception as exc:
-        print(f"[Model Error] Could not load YOLO model: {exc}")
+        print(f"[Warning] Could not load COCO model: {exc}")
+
+    doors_path = Path(args.doors_model)
+    if doors_path.exists():
+        print(f"[Model 2] Loading Fine-Tuned Doors Model: {args.doors_model}...")
+        try:
+            model_doors = YOLO(str(doors_path))
+            door_names = model_doors.names if hasattr(model_doors, "names") else {}
+        except Exception as exc:
+            print(f"[Warning] Could not load doors model: {exc}")
+    else:
+        print(f"[Model 2] Doors model '{args.doors_model}' not found, running single COCO model.")
+
+    if model_coco is None and model_doors is None:
+        print("[Fatal Error] No YOLO model could be loaded.")
         sys.exit(1)
+
+    # Determine mode label
+    if model_coco is not None and model_doors is not None:
+        mode_label = "Ensemble: COCO-80 + Doors"
+    elif model_doors is not None:
+        mode_label = "Model: Doors & Indoor"
+    else:
+        mode_label = "Model: COCO-80"
 
     use_mock = args.mock
     cap = None
@@ -389,6 +465,7 @@ def run_pipeline(args: argparse.Namespace):
 
     print("\n" + "=" * 65)
     print(" Assistive Vision Prototype (PulsePath) Active")
+    print(f" - Vision Engine: {mode_label}")
     print(f" - Active Camera: {get_camera_name(current_cam_idx)}")
     print(" - Press 'c' to cycle cameras (iPhone Continuity <-> Mac FaceTime)")
     print(" - Press 'w' for 'Where am I?' query")
@@ -416,26 +493,44 @@ def run_pipeline(args: argparse.Namespace):
                     continue
 
             fh, fw, _ = frame.shape
+            raw_candidates: List[Tuple[Tuple[int, int, int, int], float, str]] = []
 
-            # Run YOLO11 inference across all 80 classes
-            results = model(frame, conf=args.conf, verbose=False)
-            boxes: List[Tuple[int, int, int, int]] = []
-            scores: List[float] = []
-            class_ids: List[int] = []
+            # 1. Run COCO-80 Model (people, bottles, cups, cell phones, etc.)
+            if model_coco is not None:
+                results_coco = model_coco(frame, conf=args.conf, verbose=False)
+                if len(results_coco) > 0 and results_coco[0].boxes is not None:
+                    for b in results_coco[0].boxes:
+                        xyxy = b.xyxy[0].cpu().numpy().astype(int)
+                        box_tuple = (xyxy[0], xyxy[1], xyxy[2], xyxy[3])
+                        conf_val = float(b.conf[0].cpu().numpy())
+                        cls_idx = int(b.cls[0].cpu().numpy())
+                        lbl = coco_names.get(cls_idx, f"obj_{cls_idx}")
+                        raw_candidates.append((box_tuple, conf_val, lbl))
 
-            if len(results) > 0 and results[0].boxes is not None:
-                for b in results[0].boxes:
-                    xyxy = b.xyxy[0].cpu().numpy().astype(int)
-                    boxes.append((xyxy[0], xyxy[1], xyxy[2], xyxy[3]))
-                    scores.append(float(b.conf[0].cpu().numpy()))
-                    class_ids.append(int(b.cls[0].cpu().numpy()))
+            # 2. Run Fine-Tuned Doors Model (doors, wardrobes, windows, etc.)
+            if model_doors is not None:
+                results_doors = model_doors(frame, conf=args.conf, verbose=False)
+                if len(results_doors) > 0 and results_doors[0].boxes is not None:
+                    for b in results_doors[0].boxes:
+                        xyxy = b.xyxy[0].cpu().numpy().astype(int)
+                        box_tuple = (xyxy[0], xyxy[1], xyxy[2], xyxy[3])
+                        conf_val = float(b.conf[0].cpu().numpy())
+                        cls_idx = int(b.cls[0].cpu().numpy())
+                        lbl = door_names.get(cls_idx, f"indoor_{cls_idx}")
+                        raw_candidates.append((box_tuple, conf_val, lbl))
+
+            # Merge and eliminate overlapping duplicate boxes
+            merged_candidates = merge_candidate_detections(raw_candidates, iou_thresh=0.45)
+
+            boxes = [c[0] for c in merged_candidates]
+            scores = [c[1] for c in merged_candidates]
+            labels = [c[2] for c in merged_candidates]
 
             # Spatial routing & haptics
             detections, haptic_state = router.process_detections(
                 boxes=boxes,
                 scores=scores,
-                class_ids=class_ids,
-                class_names=class_names,
+                labels=labels,
                 frame_width=fw,
                 frame_height=fh,
             )
@@ -476,6 +571,7 @@ def run_pipeline(args: argparse.Namespace):
                 camera_idx=current_cam_idx if not use_mock else -1,
                 location_msg=location_banner,
                 toast_msg=toast_banner,
+                model_mode_label=mode_label,
             )
 
             if not args.headless:
@@ -489,7 +585,6 @@ def run_pipeline(args: argparse.Namespace):
                     location_banner_time = time.time()
                     print(f"[Location Query Response] {location_banner}")
                 elif key == ord("c") and not use_mock:
-                    # Switch Camera (0 <-> 1)
                     new_idx = 0 if current_cam_idx == 1 else 1
                     print(f"\n[Camera] User requested switch to index {new_idx} ({get_camera_name(new_idx)})...")
                     if cap is not None:
@@ -518,13 +613,12 @@ def run_pipeline(args: argparse.Namespace):
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="PulsePath Assistive Vision Prototype")
-    # Auto-detect custom trained model
-    import os
-    default_model = "pulsepath_doors_yolo11n.pt" if os.path.exists("pulsepath_doors_yolo11n.pt") else "yolo11n.pt"
-    # Default camera set to 1 (iPhone Continuity Camera)
+    # Dual-model ensemble configuration
+    parser.add_argument("--coco-model", type=str, default="yolo11n.pt", help="Base COCO-80 model path (default: yolo11n.pt)")
+    parser.add_argument("--doors-model", type=str, default="pulsepath_doors_yolo11n.pt", help="Fine-tuned doors model path (default: pulsepath_doors_yolo11n.pt)")
+    # Camera options
     parser.add_argument("--camera", type=int, default=1, help="Camera index (default: 1 for iPhone Continuity Camera)")
     parser.add_argument("--conf", type=float, default=0.35, help="YOLO confidence threshold (default: 0.35)")
-    parser.add_argument("--model", type=str, default=default_model, help=f"YOLO model path (default: {default_model})")
     parser.add_argument("--width", type=int, default=640, help="Frame width (default: 640)")
     parser.add_argument("--height", type=int, default=480, help="Frame height (default: 480)")
     parser.add_argument("--mock", action="store_true", help="Run with synthetic test stream")
