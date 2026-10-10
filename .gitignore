@@ -1,0 +1,25 @@
+# Python
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# PyTorch / Models
+*.pt
+*.onnx
+*.engine
+*.mlpackage
+yolo11n*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE / Antigravity
+.idea/
+.vscode/
