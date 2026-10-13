@@ -20,8 +20,11 @@ from adapters.camera.base import CameraSource, get_camera_name, open_camera
 from adapters.camera.factory import CameraFactory
 from adapters.camera.mock_camera import create_mock_frame
 from contracts.detection import Detection
+from contracts.frame import LensStatus
 from contracts.haptic_command import HapticFeedbackState
 from features.context_routines.context_tracker import ContextSceneTracker
+from services.arbiter.rule_arbiter import RuleArbiter
+from services.safety.safety_engine import SafetyEngine
 from services.safety.spatial_router import SpatialRoutingEngine
 from services.safety.yolo_ensemble import (
     YoloEnsembleDetector,
@@ -63,17 +66,15 @@ def resolve_camera_source(args: argparse.Namespace) -> CameraSource:
     if args.camera_profile:
         return CameraFactory.create(args.camera_profile, cli_overrides=cli_overrides)
 
-    # If numeric camera index is explicitly passed (not default 1 or passed specifically)
     if args.camera != 1:
         cli_overrides["device_index"] = args.camera
         return CameraFactory.create("uvc_webcam", cli_overrides=cli_overrides)
 
-    # Default: auto-detect based on OS (iPhone on macOS, Android USB on Windows)
     return CameraFactory.create("auto", cli_overrides=cli_overrides)
 
 
 def run_pipeline(args: argparse.Namespace) -> None:
-    """Main execution loop for Nethra YOLO11 assistive vision and spatial routing."""
+    """Main execution loop for Nethra YOLO11 assistive vision, safety engine, and spatial routing."""
     detector = YoloEnsembleDetector(
         coco_model_path=args.coco_model,
         doors_model_path=args.doors_model,
@@ -85,7 +86,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     mode_label = detector.mode_label
 
-    # Initialize Camera HAL Adapter
     camera = resolve_camera_source(args)
     if not camera.start():
         print(f"[Warning] Failed to start preferred camera ({camera.name}). Falling back to synthetic mock stream.")
@@ -93,12 +93,17 @@ def run_pipeline(args: argparse.Namespace) -> None:
         camera = CameraFactory.create("synthetic_mock")
         camera.start()
 
-    # Pass FOV area scale to SpatialRoutingEngine for calibration
+    # Initialize L2 Safety Engine (Hygiene, Detector, Tracker, Growth Estimator, Spatial Router)
     router = SpatialRoutingEngine(
         min_area_ratio=0.015,
         max_area_ratio=0.35,
         fov_area_scale=camera.fov_area_scale,
     )
+    safety_engine = SafetyEngine(
+        detector=detector,
+        spatial_router=router,
+    )
+    rule_arbiter = RuleArbiter()
     context_tracker = ContextSceneTracker()
 
     print("\n" + "=" * 65)
@@ -126,19 +131,25 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 time.sleep(0.01)
                 continue
 
-            fh, fw, _ = frame.shape
-            boxes, scores, labels = detector.detect(frame, conf=args.conf)
-
-            # Spatial routing & dual-wristband PWM haptics
-            detections, haptic_state = router.process_detections(
-                boxes=boxes,
-                scores=scores,
-                labels=labels,
-                frame_width=fw,
-                frame_height=fh,
+            # 1. Run Offline Safety Engine
+            detections, haptic_state, candidate_alerts, lens_status = safety_engine.process(
+                frame=frame,
+                timestamp_ns=capture_ts,
+                conf=args.conf,
             )
 
-            # Context update (bed detection, morning routine)
+            # Lens hygiene warning feedback
+            if lens_status != LensStatus.OK and lens_status != LensStatus.BLURRED:
+                toast_banner = f"Camera Alert: Lens {lens_status.value}"
+                toast_time = time.time()
+
+            # 2. Run Deterministic Rule Arbiter
+            winning_alert, dispatch_channel = rule_arbiter.arbitrate(candidate_alerts)
+            if winning_alert is not None and winning_alert.speech_key:
+                toast_banner = f"[{winning_alert.tier.value}] {winning_alert.object_class.upper()} {winning_alert.direction_sector.value}"
+                toast_time = time.time()
+
+            # 3. Context Routine Update (bed detection, morning routine)
             context_msg = context_tracker.update(detections)
 
             # Telemetry printing every 30 frames
@@ -148,11 +159,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
                     if haptic_state.active_threat
                     else "Clear"
                 )
+                arbiter_info = f" | Alert: {winning_alert.tier.value}" if winning_alert else ""
                 print(
                     f"[Telemetry] Frame {frame_count:04d} | "
                     f"Left PWM: {haptic_state.left_pwm:4.1f}% | "
                     f"Right PWM: {haptic_state.right_pwm:4.1f}% | "
-                    f"{threat_info}"
+                    f"{threat_info}{arbiter_info}"
                 )
 
             now = time.time()
@@ -189,7 +201,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
                     location_banner_time = time.time()
                     print(f"[Location Query Response] {location_banner}")
                 elif key == ord("c"):
-                    # Cycle to alternate camera (Webcam <-> Phone Camera)
                     print("\n[Camera] User requested camera cycle...")
                     camera.release()
                     if camera.source_id.value in ("IPHONE", "ANDROID_USB", "ANDROID_IP"):
@@ -202,7 +213,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         camera = CameraFactory.create("synthetic_mock")
                         camera.start()
 
-                    router.fov_area_scale = camera.fov_area_scale
+                    safety_engine.spatial_router.fov_area_scale = camera.fov_area_scale
                     toast_banner = f"Switched: {camera.name}"
                     toast_time = time.time()
             else:
