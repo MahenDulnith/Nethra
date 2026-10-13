@@ -2,10 +2,25 @@
 
 from __future__ import annotations
 
+import platform
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+import torch
+
+
+def detect_best_device() -> str:
+    """Detects available hardware accelerator across Windows (CUDA), macOS (MPS), and CPU."""
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        print(f"[Hardware Acceleration] NVIDIA CUDA GPU ({gpu_name}): ACTIVE ✅")
+        return "0"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        print("[Hardware Acceleration] Apple Silicon MPS (Metal Performance Shaders): ACTIVE ✅")
+        return "mps"
+    print("[Hardware Acceleration] CPU mode (No dedicated GPU detected).")
+    return "cpu"
 
 
 def compute_iou(boxA: Tuple[int, int, int, int], boxB: Tuple[int, int, int, int]) -> float:
@@ -81,9 +96,11 @@ class YoloEnsembleDetector:
         coco_model_path: str = "models/yolo11n.pt",
         doors_model_path: str = "models/nethra_doors_yolo11n.pt",
         iou_thresh: float = 0.45,
+        device: Optional[str] = None,
     ) -> None:
         from ultralytics import YOLO
 
+        self.device = device or detect_best_device()
         self.iou_thresh = iou_thresh
         self.model_coco = None
         self.model_doors = None
@@ -91,7 +108,7 @@ class YoloEnsembleDetector:
         self.door_names: Dict[int, str] = {}
 
         resolved_coco = resolve_model_path(coco_model_path)
-        print(f"[Model 1] Loading Base YOLO11 Nano (COCO 80 classes): {resolved_coco}...")
+        print(f"[Model 1] Loading Base YOLO11 Nano (COCO 80 classes): {resolved_coco} on device={self.device}...")
         try:
             self.model_coco = YOLO(str(resolved_coco))
             self.coco_names = getattr(self.model_coco, "names", {})
@@ -100,7 +117,7 @@ class YoloEnsembleDetector:
 
         resolved_doors = resolve_model_path(doors_model_path)
         if resolved_doors.exists():
-            print(f"[Model 2] Loading Fine-Tuned Doors/Assistive Model: {resolved_doors}...")
+            print(f"[Model 2] Loading Fine-Tuned Doors/Assistive Model: {resolved_doors} on device={self.device}...")
             try:
                 self.model_doors = YOLO(str(resolved_doors))
                 self.door_names = getattr(self.model_doors, "names", {})
@@ -128,7 +145,7 @@ class YoloEnsembleDetector:
         raw_candidates: List[Tuple[Tuple[int, int, int, int], float, str]] = []
 
         if self.model_coco is not None:
-            results_coco = self.model_coco(frame, conf=conf, verbose=False)
+            results_coco = self.model_coco(frame, conf=conf, device=self.device, verbose=False)
             if len(results_coco) > 0 and results_coco[0].boxes is not None:
                 for b in results_coco[0].boxes:
                     xyxy = b.xyxy[0].cpu().numpy().astype(int)
@@ -139,7 +156,7 @@ class YoloEnsembleDetector:
                     raw_candidates.append((box_tuple, conf_val, lbl))
 
         if self.model_doors is not None:
-            results_doors = self.model_doors(frame, conf=conf, verbose=False)
+            results_doors = self.model_doors(frame, conf=conf, device=self.device, verbose=False)
             if len(results_doors) > 0 and results_doors[0].boxes is not None:
                 for b in results_doors[0].boxes:
                     xyxy = b.xyxy[0].cpu().numpy().astype(int)

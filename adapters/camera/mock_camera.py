@@ -1,9 +1,16 @@
-"""L1 Synthetic Mock Camera Generator for hardware-free testing."""
+"""L1 Synthetic Mock Camera Generator and MockCameraSource."""
 
 from __future__ import annotations
 
+import time
+from typing import Optional, Tuple
+
 import cv2
 import numpy as np
+
+from adapters.camera.base import CameraSource
+from adapters.clock.monotonic_clock import MonotonicClock
+from contracts.frame import SourceId
 
 
 def create_mock_frame(width: int = 640, height: int = 480, frame_count: int = 0) -> np.ndarray:
@@ -44,3 +51,52 @@ def create_mock_frame(width: int = 640, height: int = 480, frame_count: int = 0)
     )
 
     return frame
+
+
+class MockCameraSource(CameraSource):
+    """CameraSource implementation producing synthetic mock corridor frames."""
+
+    def __init__(
+        self,
+        width: int = 640,
+        height: int = 480,
+        fps: float = 30.0,
+        fov_area_scale: float = 1.0,
+    ) -> None:
+        super().__init__(
+            name="Synthetic Mock Stream",
+            source_id=SourceId.MOCK,
+            width=width,
+            height=height,
+            fov_area_scale=fov_area_scale,
+        )
+        self.fps = fps
+        self.frame_count = 0
+        self.frame_interval_sec = 1.0 / max(1.0, fps)
+        self.last_frame_time = 0.0
+
+    def start(self) -> bool:
+        self.is_opened = True
+        self.frame_count = 0
+        self.last_frame_time = time.time()
+        print("[MockCamera] Synthetic stream started.")
+        return True
+
+    def read(self) -> Tuple[bool, Optional[np.ndarray], int]:
+        if not self.is_opened:
+            return False, None, 0
+
+        # Frame pacing
+        now = time.time()
+        elapsed = now - self.last_frame_time
+        if elapsed < self.frame_interval_sec:
+            time.sleep(self.frame_interval_sec - elapsed)
+        self.last_frame_time = time.time()
+
+        self.frame_count += 1
+        frame = create_mock_frame(self.width, self.height, self.frame_count)
+        ts = MonotonicClock.now_ns()
+        return True, frame, ts
+
+    def release(self) -> None:
+        self.is_opened = False

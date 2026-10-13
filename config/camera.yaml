@@ -1,0 +1,66 @@
+# Nethra Camera Hardware Abstraction Layer (HAL) Configuration
+# Defines camera input profiles for macOS + iPhone Continuity, Windows + Android (USB/IP), UVC Glasses, and Mock streams.
+
+default_profile: auto
+
+profiles:
+  iphone_continuity:
+    source_type: continuity
+    device_index: 1
+    width: 640
+    height: 480
+    fps: 30
+    fov_area_scale: 1.0       # Baseline: iPhone Ultra-Wide (0.5x zoom)
+    bufferless: false
+    description: "macOS Continuity Camera (iPhone Ultra-Wide 0.5x)"
+
+  android_usb:
+    source_type: android_usb
+    stream_url: "http://127.0.0.1:8080/video"   # Stream via `adb forward tcp:8080 tcp:8080` (IP Webcam) or DroidCam
+    fallback_index: 1                           # DirectShow camera index fallback (DroidCam USB Virtual Cam)
+    width: 640
+    height: 480
+    fps: 30
+    fov_area_scale: 0.65      # Normalized area scale: compensates for 1.0x standard phone lens vs Ultra-Wide
+    bufferless: true          # Discards stale buffered frames in background thread (<15ms latency)
+    auto_adb_forward: true    # Automatically attempts `adb forward tcp:8080 tcp:8080` if USB device connected
+    description: "Android Camera via USB (ADB Port Forwarding / DroidCam)"
+
+  android_ip:
+    source_type: android_ip
+    stream_url: "http://192.168.1.100:8080/video"  # Update with your Android phone's Wi-Fi IP
+    width: 640
+    height: 480
+    fps: 30
+    fov_area_scale: 0.65
+    bufferless: true
+    description: "Android Camera via Wi-Fi (IP Webcam / DroidCam MJPEG)"
+
+  uvc_webcam:
+    source_type: uvc
+    device_index: 0           # 0 for Laptop built-in webcam or USB-C Smart Glasses
+    width: 640
+    height: 480
+    fps: 30
+    fov_area_scale: 0.85
+    bufferless: false
+    description: "Built-in Laptop Webcam / USB-C Smart Glasses (UVC)"
+
+  synthetic_mock:
+    source_type: mock
+    width: 640
+    height: 480
+    fps: 30
+    fov_area_scale: 1.0
+    bufferless: false
+    description: "Synthetic Corridor with Oscillating Obstacle (Hardware-Free)"
+
+  file_replay:
+    source_type: file
+    file_path: "harness/fixtures/street/sample_walk.mp4"
+    width: 640
+    height: 480
+    fps: 30
+    fov_area_scale: 1.0
+    bufferless: false
+    description: "Recorded MP4 Video File Replay (Benchmarking)"

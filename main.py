@@ -12,11 +12,12 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from typing import Union
+from typing import Optional, Union
 
 import cv2
 
-from adapters.camera.base import get_camera_name, open_camera
+from adapters.camera.base import CameraSource, get_camera_name, open_camera
+from adapters.camera.factory import CameraFactory
 from adapters.camera.mock_camera import create_mock_frame
 from contracts.detection import Detection
 from contracts.haptic_command import HapticFeedbackState
@@ -45,6 +46,32 @@ __all__ = [
 ]
 
 
+def resolve_camera_source(args: argparse.Namespace) -> CameraSource:
+    """Instantiates the appropriate CameraSource via CameraFactory or explicit CLI flags."""
+    if args.mock:
+        return CameraFactory.create("synthetic_mock")
+
+    cli_overrides = {
+        "width": args.width,
+        "height": args.height,
+    }
+
+    if args.camera_url:
+        cli_overrides["stream_url"] = args.camera_url
+        return CameraFactory.create("android_usb", cli_overrides=cli_overrides)
+
+    if args.camera_profile:
+        return CameraFactory.create(args.camera_profile, cli_overrides=cli_overrides)
+
+    # If numeric camera index is explicitly passed (not default 1 or passed specifically)
+    if args.camera != 1:
+        cli_overrides["device_index"] = args.camera
+        return CameraFactory.create("uvc_webcam", cli_overrides=cli_overrides)
+
+    # Default: auto-detect based on OS (iPhone on macOS, Android USB on Windows)
+    return CameraFactory.create("auto", cli_overrides=cli_overrides)
+
+
 def run_pipeline(args: argparse.Namespace) -> None:
     """Main execution loop for Nethra YOLO11 assistive vision and spatial routing."""
     detector = YoloEnsembleDetector(
@@ -57,32 +84,27 @@ def run_pipeline(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     mode_label = detector.mode_label
-    use_mock = args.mock
-    cap = None
 
-    # Allow numeric camera index or string URL (e.g. Android IP Webcam / ADB USB stream)
-    current_cam_idx: Union[int, str]
-    if args.camera_url:
-        current_cam_idx = args.camera_url
-    else:
-        current_cam_idx = args.camera
+    # Initialize Camera HAL Adapter
+    camera = resolve_camera_source(args)
+    if not camera.start():
+        print(f"[Warning] Failed to start preferred camera ({camera.name}). Falling back to synthetic mock stream.")
+        camera.release()
+        camera = CameraFactory.create("synthetic_mock")
+        camera.start()
 
-    if not use_mock:
-        cap, current_cam_idx = open_camera(current_cam_idx)
-        if cap is None:
-            print("[Warning] No video camera opened. Falling back to synthetic mock stream.")
-            use_mock = True
-        else:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
-
-    router = SpatialRoutingEngine(min_area_ratio=0.015, max_area_ratio=0.35)
+    # Pass FOV area scale to SpatialRoutingEngine for calibration
+    router = SpatialRoutingEngine(
+        min_area_ratio=0.015,
+        max_area_ratio=0.35,
+        fov_area_scale=camera.fov_area_scale,
+    )
     context_tracker = ContextSceneTracker()
 
     print("\n" + "=" * 65)
     print(" Nethra Assistive Vision Prototype Active")
     print(f" - Vision Engine: {mode_label}")
-    print(f" - Active Camera: {get_camera_name(current_cam_idx if not use_mock else -1)}")
+    print(f" - Active Camera: {camera.name} (FOV Scale: {camera.fov_area_scale}x)")
     print(" - Press 'c' to cycle cameras (Phone Camera <-> Laptop Webcam)")
     print(" - Press 'w' for 'Where am I?' query")
     print(" - Press 'q' to quit")
@@ -93,21 +115,16 @@ def run_pipeline(args: argparse.Namespace) -> None:
     current_fps = 0.0
     location_banner = None
     location_banner_time = 0.0
-    toast_banner = f"Connected: {get_camera_name(current_cam_idx if not use_mock else -1)}"
+    toast_banner = f"Connected: {camera.name}"
     toast_time = time.time()
 
     try:
         while True:
             frame_count += 1
-            if use_mock:
-                frame = create_mock_frame(args.width, args.height, frame_count)
-                time.sleep(0.03)
-            else:
-                assert cap is not None
-                ret, frame = cap.read()
-                if not ret or frame is None:
-                    time.sleep(0.05)
-                    continue
+            ret, frame, capture_ts = camera.read()
+            if not ret or frame is None:
+                time.sleep(0.01)
+                continue
 
             fh, fw, _ = frame.shape
             boxes, scores, labels = detector.detect(frame, conf=args.conf)
@@ -155,7 +172,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 haptics=haptic_state,
                 context_msg=context_msg,
                 fps=current_fps,
-                camera_idx=current_cam_idx if not use_mock else -1,
+                camera_idx=camera.name,
                 location_msg=location_banner,
                 toast_msg=toast_banner,
                 model_mode_label=mode_label,
@@ -171,32 +188,29 @@ def run_pipeline(args: argparse.Namespace) -> None:
                     location_banner = context_tracker.query_location(detections)
                     location_banner_time = time.time()
                     print(f"[Location Query Response] {location_banner}")
-                elif key == ord("c") and not use_mock and isinstance(current_cam_idx, int):
-                    new_idx = 0 if current_cam_idx == 1 else 1
-                    print(
-                        f"\n[Camera] User requested switch to index {new_idx} ({get_camera_name(new_idx)})..."
-                    )
-                    if cap is not None:
-                        cap.release()
-                    new_cap, actual_new = open_camera(new_idx)
-                    if new_cap is not None:
-                        cap = new_cap
-                        current_cam_idx = actual_new
-                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
-                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
-                        toast_banner = f"Switched: {get_camera_name(current_cam_idx)}"
-                        toast_time = time.time()
+                elif key == ord("c"):
+                    # Cycle to alternate camera (Webcam <-> Phone Camera)
+                    print("\n[Camera] User requested camera cycle...")
+                    camera.release()
+                    if camera.source_id.value in ("IPHONE", "ANDROID_USB", "ANDROID_IP"):
+                        camera = CameraFactory.create("uvc_webcam", cli_overrides={"width": args.width, "height": args.height})
                     else:
-                        print(f"[Camera Error] Could not switch to index {new_idx}.")
-                        toast_banner = f"Error opening camera #{new_idx}"
-                        toast_time = time.time()
+                        camera = CameraFactory.create("auto", cli_overrides={"width": args.width, "height": args.height})
+
+                    if not camera.start():
+                        print("[Camera Error] Could not open alternate camera. Falling back to mock.")
+                        camera = CameraFactory.create("synthetic_mock")
+                        camera.start()
+
+                    router.fov_area_scale = camera.fov_area_scale
+                    toast_banner = f"Switched: {camera.name}"
+                    toast_time = time.time()
             else:
                 if args.max_frames and frame_count >= args.max_frames:
                     break
 
     finally:
-        if cap is not None:
-            cap.release()
+        camera.release()
         cv2.destroyAllWindows()
 
 
@@ -210,21 +224,30 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "--doors-model",
+        "--model",
+        dest="doors_model",
         type=str,
         default="models/nethra_doors_yolo11n.pt",
         help="Fine-tuned doors/assistive model path (default: models/nethra_doors_yolo11n.pt)",
     )
     parser.add_argument(
+        "--camera-profile",
+        type=str,
+        default="",
+        choices=["", "auto", "iphone_continuity", "android_usb", "android_ip", "uvc_webcam", "synthetic_mock", "file_replay"],
+        help="Named camera profile from config/camera.yaml (default: auto)",
+    )
+    parser.add_argument(
         "--camera",
         type=int,
         default=1,
-        help="Camera index (default: 1 for Phone Camera / Continuity Camera, 0 for Laptop Webcam)",
+        help="Camera device index (default: 1 for Phone Camera / Continuity Camera, 0 for Laptop Webcam)",
     )
     parser.add_argument(
         "--camera-url",
         type=str,
         default="",
-        help="Optional stream URL for Android IP Webcam / ADB USB stream (e.g. http://127.0.0.1:8080/video)",
+        help="Stream URL for Android IP Webcam / ADB stream (e.g. http://127.0.0.1:8080/video)",
     )
     parser.add_argument(
         "--conf",
