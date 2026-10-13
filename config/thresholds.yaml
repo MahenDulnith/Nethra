@@ -1,0 +1,115 @@
+# Every numeric threshold in the system. Values here are STARTING POINTS
+# to be replaced by measurement (A2.x). Nothing here is a measured result.
+
+hygiene:
+  blur:
+    min_laplacian_variance: 55.0      # calibrate on real walking footage
+  darkness:
+    min_mean_luminance: 35            # 0-255 scale, ONE definition only
+  redundancy:
+    min_frame_difference: 0.04        # mean abs diff, normalised 0..1
+    min_interval_ms: 250
+  occlusion:
+    max_edge_density: 0.012
+    persist_frames: 5
+
+safety:
+  detector:
+    input_width: 416
+    input_height: 416
+    target_fps_street: 8
+    min_confidence: 0.35
+    nms_iou: 0.45
+  tracker:
+    max_age_frames: 12
+    min_hits: 3
+    iou_match_threshold: 0.3
+  ttc:
+    min_track_age_frames: 4           # below this, TTC is null. Honesty control.
+    critical_seconds: 2.5
+    advisory_seconds: 5.0
+  buckets:
+    immediate_ratio: 0.45             # bbox height / frame height
+    near_ratio: 0.22
+    mid_ratio: 0.08
+
+arbiter:
+  cooldowns_ms:
+    CRITICAL: 1500
+    ADVISORY: 6000
+    SOCIAL: 20000
+  sensitivity:
+    levels: [low, normal, high]
+    default_level: normal
+  context:
+    suppress_while_user_speaking: true
+    suppress_in_conversation: true
+    critical_overrides_everything: true
+
+memory:
+  embedding_dim: 256              # lexical embedder; see TextEmbedder note
+  retrieval:
+    candidate_limit: 200          # filter stage caps this many before ranking
+    top_k: 5
+    min_similarity: 0.18
+  retention_days: 30
+  autolog_min_interval_ms: 60000  # don't log the same place twice a minute
+
+people:
+  matching:
+    high_confidence: 0.82
+    medium_confidence: 0.68
+  embedding_dim: 512
+  samples_per_person: 5
+  min_face_pixels: 90             # reject faces too small to embed reliably
+  max_enrol_seconds: 25
+
+lookaround:
+  max_turns: 4
+  turn_timeout_ms: 4000
+  total_timeout_ms: 20000
+  # --- S1-B additions ---
+  no_progress_turns: 2          # turns with no scene change before giving up
+  scene_change_threshold: 0.06  # mean abs diff 0..1; below this the user hasn't turned
+  settle_ms: 600                # wait after a turn cue before re-querying
+
+voice:
+  barge_in_ms: 150
+  max_reply_sentences: 2
+  thinking_tone_after_ms: 700
+  vad_energy_threshold: 0.018
+  vad_hangover_ms: 300
+  ptt_min_hold_ms: 180          # ignore accidental taps
+  ptt_max_hold_ms: 15000        # hard stop on a stuck button
+
+power:
+  low_battery_percent: 20
+  street_fps: 8
+  home_camera_off: true
+  audio_fallback_ms: 1000       # B1.11 done-when: fall back within 1s of a link drop
+  telemetry_poll_ms: 700
+  # --- S1-C additions ---
+  camera_fallback_ms: 1000        # C1.1: fall back to phone camera within 1s
+  auto_low_battery: true          # switch modes without being asked
+  ask_mode_timeout_ms: 20000      # Ask returns to the previous mode after this
+  ask_resolution_multiplier: 2
+
+endurance:
+  sample_interval_ms: 5000        # temp / battery / fps sample rate
+  target_duration_min: 60
+  fps_window_frames: 60           # rolling window for the measured fps figure
+  # NO numeric temperature limit here. It is SET FROM the first runs and
+  # body-contact safety guidance, then added as `max_skin_proxy_c`.
+  # Writing a guess here would be exactly the error the master spec corrects.
+
+offline:
+  verify_alert_types: [CRITICAL, ADVISORY]
+  max_alert_wait_ms: 8000
+
+haptic:
+  max_intensity_app_side: 80
+  pulse_hz_by_bucket:
+    IMMEDIATE: 8
+    NEAR: 5
+    MID: 3
+    FAR: 2

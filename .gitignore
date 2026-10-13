@@ -1,0 +1,30 @@
+# Python
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# PyTorch / AI Models (large weights excluded; keep directory structure)
+models/*.pt
+models/*.onnx
+models/*.engine
+models/*.mlpackage
+models/buffalo_sc/*
+*.pt
+*.onnx
+*.zip
+runs/
+datasets/images/
+datasets/labels/
+
+# OS & IDEs
+.DS_Store
+.AppleDouble
+.LSOverride
+.idea/
+.vscode/
+Thumbs.db
