@@ -8,6 +8,7 @@ from tests.test_safety_engine_and_arbiter import (
     TestHygieneAndSafetyEngine,
     TestRuleArbiter,
 )
+from tests.test_speech_dispatcher import TestSpeechDispatcher
 from tests.test_spatial_routing import TestContextSceneTracker, TestSpatialRouting
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "TestCameraAdapters",
     "TestHygieneAndSafetyEngine",
     "TestRuleArbiter",
+    "TestSpeechDispatcher",
 ]
 
 if __name__ == "__main__":

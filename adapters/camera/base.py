@@ -39,21 +39,32 @@ class ThreadedFrameGrabber:
         self.thread.start()
 
     def _worker(self) -> None:
+        consecutive_failures = 0
         while self.running:
             if not self.cap.isOpened():
-                time.sleep(0.01)
+                time.sleep(0.05)
                 continue
 
             grabbed = self.cap.grab()
             if grabbed:
                 ret, frame = self.cap.retrieve()
                 if ret and frame is not None:
+                    consecutive_failures = 0
                     ts = MonotonicClock.now_ns()
                     with self.lock:
                         self.latest_frame = frame
                         self.latest_timestamp_ns = ts
+                else:
+                    consecutive_failures += 1
             else:
-                time.sleep(0.005)
+                consecutive_failures += 1
+                time.sleep(0.01)
+
+            # If stream drops (e.g. Wi-Fi disconnect or IP webcam socket close)
+            if consecutive_failures > 50:
+                with self.lock:
+                    self.latest_frame = None
+                time.sleep(0.05)
 
     def read_latest(self) -> Tuple[bool, Optional[np.ndarray], int]:
         with self.lock:

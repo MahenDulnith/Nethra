@@ -40,18 +40,38 @@ class SafetyEngine:
         self.spatial_router = spatial_router or SpatialRoutingEngine()
         self.direction_mapper = DirectionMapper()
         self.bucket_mapper = BucketMapper()
+        self._last_detections: List[Detection] = []
+        self._last_haptics: HapticFeedbackState = HapticFeedbackState()
+        self._last_alerts: List[SafetyAlert] = []
+        self._blur_grace: int = 0
 
     def process(
-        self, frame: np.ndarray, timestamp_ns: int, conf: float = 0.35
+        self,
+        frame: np.ndarray,
+        timestamp_ns: int,
+        conf: float = 0.35,
     ) -> Tuple[List[Detection], HapticFeedbackState, List[SafetyAlert], LensStatus]:
         """Processes a frame completely offline and produces detections, haptics, and safety alerts."""
         # 1. Hygiene Gate
         accepted, reject_reason, lens_status = self.frame_selector.evaluate(frame)
         if not accepted:
-            # When frame is dark, blurry, occluded, or redundant, return empty detections
-            empty_haptics = HapticFeedbackState()
-            return [], empty_haptics, [], lens_status
+            # If rejected purely because scene is static/redundant, preserve last known detections
+            if lens_status == LensStatus.OK:
+                return self._last_detections, self._last_haptics, self._last_alerts, lens_status
 
+            # Allow up to 3 frames grace for momentary walking blur before clearing
+            if lens_status == LensStatus.BLURRED and self._blur_grace < 3 and self._last_detections:
+                self._blur_grace += 1
+                return self._last_detections, self._last_haptics, self._last_alerts, lens_status
+
+            # Clear state on darkness or occlusion
+            self._blur_grace = 0
+            self._last_detections = []
+            self._last_haptics = HapticFeedbackState()
+            self._last_alerts = []
+            return [], self._last_haptics, [], lens_status
+
+        self._blur_grace = 0
         fh, fw = frame.shape[:2]
 
         # 2. YOLO Ensemble Inference
@@ -69,15 +89,23 @@ class SafetyEngine:
             frame_height=fh,
         )
 
-        # Associate track IDs to detections
-        for det, track in zip(detections, active_tracks):
-            det.track_id = track.track_id
+        # Associate track IDs to detections by box identity (not list order)
+        track_by_box = {t.box: t for t in active_tracks}
+        for det in detections:
+            matched = track_by_box.get(det.box)
+            if matched is not None:
+                det.track_id = matched.track_id
 
         # 5. TTC and Candidate Safety Alerts
         candidate_alerts: List[SafetyAlert] = []
         total_frame_area = float(max(1, fw * fh))
 
         for track in active_tracks:
+            # Honesty gate: speech/alerts only from tracks seen on enough frames,
+            # so one-frame misclassifications never reach the user.
+            # (Haptic PWM above still reacts immediately: safety first.)
+            if track.hits < self.tracker.min_hits:
+                continue
             x1, y1, x2, y2 = track.box
             w = max(0, x2 - x1)
             h = max(0, y2 - y1)
@@ -118,4 +146,7 @@ class SafetyEngine:
             )
             candidate_alerts.append(alert)
 
+        self._last_detections = detections
+        self._last_haptics = haptic_state
+        self._last_alerts = candidate_alerts
         return detections, haptic_state, candidate_alerts, lens_status

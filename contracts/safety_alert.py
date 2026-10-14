@@ -21,6 +21,18 @@ class DirectionSector(str, Enum):
     CENTRE_RIGHT = "CENTRE_RIGHT"
     RIGHT = "RIGHT"
 
+    @property
+    def clock_face(self) -> str:
+        """Returns standard Orientation & Mobility (O&M) clock-face position."""
+        mapping = {
+            DirectionSector.LEFT: "10 o'clock",
+            DirectionSector.CENTRE_LEFT: "11 o'clock",
+            DirectionSector.CENTRE: "12 o'clock",
+            DirectionSector.CENTRE_RIGHT: "1 o'clock",
+            DirectionSector.RIGHT: "2 o'clock",
+        }
+        return mapping.get(self, "12 o'clock")
+
 
 class DistanceBucket(str, Enum):
     IMMEDIATE = "IMMEDIATE"

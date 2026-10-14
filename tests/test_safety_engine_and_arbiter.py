@@ -62,6 +62,27 @@ class TestHygieneAndSafetyEngine(unittest.TestCase):
         self.assertEqual(tracks_2[0].track_id, initial_id)
         self.assertEqual(tracks_2[0].age_frames, 2)
 
+    def test_multi_object_tracker_class_stability_filter(self) -> None:
+        """Transient single-frame misclassifications must be filtered out by class stability."""
+        tracker = MultiObjectTracker()
+        box = [(100, 100, 200, 200)]
+
+        # 3 frames of sofa
+        tracker.update(box, [0.9], ["sofa"])
+        tracker.update(box, [0.9], ["sofa"])
+        tracks = tracker.update(box, [0.9], ["sofa"])
+        self.assertEqual(tracks[0].label, "sofa")
+        self.assertTrue(tracks[0].is_confirmed)
+
+        # 1-frame transient flicker to traffic light (e.g. YOLO misclassification)
+        tracks_flicker = tracker.update(box, [0.9], ["traffic light"])
+        # Must retain stable label "sofa" (filtering out the 1-frame noise)
+        self.assertEqual(tracks_flicker[0].label, "sofa")
+
+        # Returns to sofa
+        tracks_back = tracker.update(box, [0.9], ["sofa"])
+        self.assertEqual(tracks_back[0].label, "sofa")
+
     def test_growth_estimator_honesty_control(self) -> None:
         estimator = GrowthEstimator(min_track_age_frames=4)
         young_track = Track(

@@ -17,3 +17,4 @@ Rows are written ONLY by `harness/analysis/results_writer.py`.
 | Metric | Value | Method | Trials | Build | Date |
 |---|---|---|---|---|---|
 | memory recall hit@1 | 19/24 = 79.2% | scripted day, 24 events, 24 questions, hybrid filter-then-rank (harness/bench/memory_recall_bench.py) | 24 | — | 2026-10-12 |
+| glass-to-speech latency | median 34.3 ms, p95 37.2 ms | frame.capture -> speech.dispatch, 50 trials, NVIDIA RTX 4060 Laptop GPU CUDA | 50 | phase4b-rtx4060 | 2026-10-14 |

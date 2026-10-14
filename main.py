@@ -20,12 +20,14 @@ from adapters.camera.base import CameraSource, get_camera_name, open_camera
 from adapters.camera.factory import CameraFactory
 from adapters.camera.mock_camera import create_mock_frame
 from contracts.detection import Detection
-from contracts.frame import LensStatus
+from contracts.frame import LensStatus, SourceId
 from contracts.haptic_command import HapticFeedbackState
 from features.context_routines.context_tracker import ContextSceneTracker
+from services.arbiter.channel_policy import DispatchChannel
 from services.arbiter.rule_arbiter import RuleArbiter
 from services.safety.safety_engine import SafetyEngine
 from services.safety.spatial_router import SpatialRoutingEngine
+from services.voice.speech_dispatcher import SpeechDispatcher
 from services.safety.yolo_ensemble import (
     YoloEnsembleDetector,
     compute_iou,
@@ -105,11 +107,18 @@ def run_pipeline(args: argparse.Namespace) -> None:
     )
     rule_arbiter = RuleArbiter()
     context_tracker = ContextSceneTracker()
+    speech = SpeechDispatcher(
+        enabled=not args.mute,
+        use_clock_face=not args.relative_directions,
+    )
 
     print("\n" + "=" * 65)
     print(" Nethra Assistive Vision Prototype Active")
     print(f" - Vision Engine: {mode_label}")
     print(f" - Active Camera: {camera.name} (FOV Scale: {camera.fov_area_scale}x)")
+    print(f" - Voice Engine:  {'Muted' if args.mute else 'Active (Offline TTS)'}")
+    print(f" - Directions:    {'Relative (Left/Right)' if args.relative_directions else 'Clock-Face (10-2 o\'clock)'}")
+    print(f" - Ears-Free:     {'Advisory Haptic-Only' if not args.voice_advisory else 'All Speech Enabled'}")
     print(" - Press 'c' to cycle cameras (Phone Camera <-> Laptop Webcam)")
     print(" - Press 'w' for 'Where am I?' query")
     print(" - Press 'q' to quit")
@@ -145,12 +154,30 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
             # 2. Run Deterministic Rule Arbiter
             winning_alert, dispatch_channel = rule_arbiter.arbitrate(candidate_alerts)
-            if winning_alert is not None and winning_alert.speech_key:
-                toast_banner = f"[{winning_alert.tier.value}] {winning_alert.object_class.upper()} {winning_alert.direction_sector.value}"
+            if winning_alert is not None:
+                dir_label = (
+                    winning_alert.direction_sector.value
+                    if args.relative_directions
+                    else winning_alert.direction_sector.clock_face
+                )
+                toast_banner = f"[{winning_alert.tier.value}] {winning_alert.object_class.upper()} {dir_label}"
                 toast_time = time.time()
+
+                # Ears-Free Policy:
+                # - CRITICAL alerts dispatch to BOTH haptic and speech (interrupting).
+                # - ADVISORY alerts dispatch to HAPTIC_ONLY unless user explicitly flags --voice-advisory.
+                # - SOCIAL alerts dispatch to SPEECH_ONLY.
+                should_speak = (
+                    dispatch_channel in (DispatchChannel.BOTH, DispatchChannel.SPEECH_ONLY)
+                    or (dispatch_channel == DispatchChannel.HAPTIC_ONLY and args.voice_advisory)
+                )
+                if should_speak:
+                    speech.dispatch_alert(winning_alert)
 
             # 3. Context Routine Update (bed detection, morning routine)
             context_msg = context_tracker.update(detections)
+            if context_msg:
+                speech.say(context_msg)
 
             # Telemetry printing every 30 frames
             if frame_count % 30 == 0:
@@ -200,6 +227,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                     location_banner = context_tracker.query_location(detections)
                     location_banner_time = time.time()
                     print(f"[Location Query Response] {location_banner}")
+                    speech.say(location_banner)
                 elif key == ord("c"):
                     print("\n[Camera] User requested camera cycle...")
                     camera.release()
@@ -216,11 +244,13 @@ def run_pipeline(args: argparse.Namespace) -> None:
                     safety_engine.spatial_router.fov_area_scale = camera.fov_area_scale
                     toast_banner = f"Switched: {camera.name}"
                     toast_time = time.time()
+                    speech.say(f"Switched to {camera.name}")
             else:
                 if args.max_frames and frame_count >= args.max_frames:
                     break
 
     finally:
+        speech.shutdown()
         camera.release()
         cv2.destroyAllWindows()
 
@@ -293,6 +323,21 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         default=0,
         help="Exit after N frames (useful for test runs)",
+    )
+    parser.add_argument(
+        "--mute",
+        action="store_true",
+        help="Disable spoken TTS audio feedback",
+    )
+    parser.add_argument(
+        "--voice-advisory",
+        action="store_true",
+        help="Speak advisory obstacle alerts in addition to haptics (default: False, ears-free mode)",
+    )
+    parser.add_argument(
+        "--relative-directions",
+        action="store_true",
+        help="Use relative directions (left/right) instead of standard clock-face directions (10-2 o'clock)",
     )
     return parser.parse_args()
 

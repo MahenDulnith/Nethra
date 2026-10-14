@@ -27,9 +27,12 @@ class OcclusionHeuristic:
         return density
 
     def update(self, image: np.ndarray) -> bool:
-        """Updates streak counter. Returns True if lens is persistently occluded."""
+        """Updates streak counter. Returns True if lens is persistently occluded (e.g. finger, pocket)."""
         density = self.compute_edge_density(image)
-        if density < self.max_edge_density:
+        std_val = float(np.std(image)) if image is not None and image.size > 0 else 0.0
+        # True occlusion occurs when edge density is extremely low AND spatial variation is flat
+        is_occluded = (density < self.max_edge_density) and (std_val < 15.0)
+        if is_occluded:
             self.occluded_streak += 1
         else:
             self.occluded_streak = max(0, self.occluded_streak - 1)

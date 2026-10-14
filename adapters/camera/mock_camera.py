@@ -53,6 +53,21 @@ def create_mock_frame(width: int = 640, height: int = 480, frame_count: int = 0)
     return frame
 
 
+def get_mock_obstacle_box(
+    width: int = 640, height: int = 480, frame_count: int = 0
+) -> Tuple[int, int, int, int]:
+    """Computes bounding box coordinates for the synthetic mock obstacle."""
+    cycle = (frame_count % 150) / 150.0
+    x_pos = int(width * 0.15 + (width * 0.7 * cycle))
+    y_pos = int(height * 0.5)
+    box_size = int(60 + 50 * np.sin(cycle * np.pi))
+    x1 = max(0, x_pos - box_size // 2)
+    y1 = max(0, y_pos - box_size // 2)
+    x2 = min(width, x_pos + box_size // 2)
+    y2 = min(height, y_pos + box_size // 2)
+    return (x1, y1, x2, y2)
+
+
 class MockCameraSource(CameraSource):
     """CameraSource implementation producing synthetic mock corridor frames."""
 

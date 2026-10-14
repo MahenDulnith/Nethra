@@ -69,6 +69,7 @@ class AndroidCameraSource(CameraSource):
         self.cap: Optional[cv2.VideoCapture] = None
         self.grabber: Optional[ThreadedFrameGrabber] = None
         self.active_source: Union[str, int] = stream_url
+        self._last_reconnect_ns: int = 0
 
     def start(self) -> bool:
         if self.auto_adb_forward and ("127.0.0.1" in self.stream_url or "localhost" in self.stream_url):
@@ -105,6 +106,7 @@ class AndroidCameraSource(CameraSource):
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         self.is_opened = True
+        self._last_reconnect_ns = MonotonicClock.now_ns()
 
         if self.bufferless:
             print("[AndroidCamera] Starting bufferless threaded frame grabber (<15ms latency)...")
@@ -118,13 +120,40 @@ class AndroidCameraSource(CameraSource):
             return False, None, 0
 
         if self.grabber is not None:
-            return self.grabber.read_latest()
+            ret, frame, ts = self.grabber.read_latest()
+            now_ns = MonotonicClock.now_ns()
+            stale = (not ret) or (now_ns - ts) > 3_000_000_000  # no new frame for 3 s
+            if stale and (now_ns - self._last_reconnect_ns) > 5_000_000_000:
+                self._last_reconnect_ns = now_ns
+                self._reconnect()
+                return False, None, ts
+            if stale:
+                return False, None, ts  # never feed a frozen frame to the safety engine
+            return ret, frame, ts
 
         ret, frame = self.cap.read()
         ts = MonotonicClock.now_ns()
         if not ret or frame is None:
             return False, None, ts
         return True, frame, ts
+
+    def _reconnect(self) -> bool:
+        """Attempts to reconnect to dropped network stream."""
+        if isinstance(self.active_source, str) and self.active_source.startswith("http"):
+            print(f"[AndroidCamera] Stream stalled. Reconnecting to {self.active_source}...")
+            if self.grabber is not None:
+                self.grabber.stop()
+                self.grabber = None
+            if self.cap is not None:
+                self.cap.release()
+            self.cap = cv2.VideoCapture(self.active_source)
+            if self.cap.isOpened():
+                self.grabber = ThreadedFrameGrabber(self.cap)
+                self.grabber.start()
+                print("[AndroidCamera] Reconnected successfully ✅")
+                return True
+            print("[AndroidCamera] Reconnect failed, will retry.")
+        return False
 
     def release(self) -> None:
         if self.grabber is not None:

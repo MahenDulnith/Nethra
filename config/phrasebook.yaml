@@ -32,16 +32,16 @@ vision:
   cannot_see_NOT_PRESENT: "I don't see it."
 
 safety:
-  critical_LEFT: "Vehicle, left."
-  critical_CENTRE_LEFT: "Vehicle, ahead left."
-  critical_CENTRE: "Vehicle ahead."
-  critical_CENTRE_RIGHT: "Vehicle, ahead right."
-  critical_RIGHT: "Vehicle, right."
-  advisory_LEFT: "Something on your left."
-  advisory_CENTRE_LEFT: "Something ahead, left."
-  advisory_CENTRE: "Something ahead."
-  advisory_CENTRE_RIGHT: "Something ahead, right."
-  advisory_RIGHT: "Something on your right."
+  critical_LEFT: "{obj}, left."
+  critical_CENTRE_LEFT: "{obj}, ahead left."
+  critical_CENTRE: "{obj} ahead."
+  critical_CENTRE_RIGHT: "{obj}, ahead right."
+  critical_RIGHT: "{obj}, right."
+  advisory_LEFT: "{obj} on your left."
+  advisory_CENTRE_LEFT: "{obj} ahead, left."
+  advisory_CENTRE: "{obj} ahead."
+  advisory_CENTRE_RIGHT: "{obj} ahead, right."
+  advisory_RIGHT: "{obj} on your right."
   social_known_person: "Someone you know is nearby."
 
 fault:

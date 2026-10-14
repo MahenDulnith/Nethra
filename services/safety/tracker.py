@@ -21,11 +21,27 @@ class Track:
     time_since_update: int = 0
     box_history: List[Tuple[int, int, int, int]] = field(default_factory=list)
     time_history: List[float] = field(default_factory=list)
+    label_history: List[str] = field(default_factory=list)
 
     @property
     def is_confirmed(self) -> bool:
         """Returns True if track has persisted enough frames to eliminate noise."""
         return self.hits >= 3
+
+    @property
+    def stable_label(self) -> str:
+        """Returns dominant label observed over recent history to eliminate transient flickers."""
+        if not self.label_history:
+            return self.label
+        window = self.label_history[-5:]
+        counts: Dict[str, int] = {}
+        for l in window:
+            counts[l] = counts.get(l, 0) + 1
+        most_common = max(counts, key=counts.get)
+        threshold = 3 if len(window) >= 4 else (len(window) + 1) // 2
+        if counts[most_common] >= threshold:
+            return most_common
+        return self.label
 
 
 class MultiObjectTracker:
@@ -78,7 +94,10 @@ class MultiObjectTracker:
             t = self.tracks[tid]
             t.box = boxes[d_idx]
             t.confidence = scores[d_idx]
-            t.label = labels[d_idx]
+            t.label_history.append(labels[d_idx])
+            if len(t.label_history) > 15:
+                t.label_history.pop(0)
+            t.label = t.stable_label
             t.age_frames += 1
             t.hits += 1
             t.time_since_update = 0
@@ -100,6 +119,7 @@ class MultiObjectTracker:
                 time_since_update=0,
                 box_history=[boxes[d_idx]],
                 time_history=[now],
+                label_history=[labels[d_idx]],
             )
             self.tracks[self.next_track_id] = new_t
             self.next_track_id += 1

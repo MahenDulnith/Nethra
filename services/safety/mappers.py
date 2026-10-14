@@ -24,6 +24,12 @@ class DirectionMapper:
         else:
             return DirectionSector.RIGHT
 
+    @staticmethod
+    def map_clock(center_x: float, frame_width: int) -> str:
+        """Returns clock-face position string (e.g. '12 o\'clock', '1 o\'clock')."""
+        sector = DirectionMapper.map_sector(center_x, frame_width)
+        return sector.clock_face
+
 
 class BucketMapper:
     """Maps bounding-box area ratio to calibrated distance buckets."""
