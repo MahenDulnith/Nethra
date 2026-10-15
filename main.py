@@ -49,7 +49,7 @@ def run_pipeline(args: argparse.Namespace):
     spatial_engine = SpatialRoutingEngine(min_area_ratio=0.015, max_area_ratio=0.35)
     guidance = GuidanceStateMachine(GuidanceConfig())
     haptic_engine = HapticPatternEngine(override_threshold=80.0)
-    context_tracker = ContextSceneTracker()
+    context_tracker = ContextSceneTracker(location=args.location)
 
     # If starting with an initial target (e.g. --target door)
     if args.target:
@@ -213,9 +213,10 @@ def run_pipeline(args: argparse.Namespace):
                         audio.speak(out.speech, now=now)
 
                 elif key == ord("w"):
-                    location_banner = context_tracker.query_location(detections)
+                    speech_text, hud_text = context_tracker.query_location(detections)
+                    location_banner = hud_text
                     location_banner_time = now
-                    audio.speak(location_banner, now=now)
+                    audio.speak(speech_text, now=now)
 
                 elif key == ord("m"):
                     is_muted = audio.toggle_mute()
@@ -260,6 +261,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--target", type=str, default=None, help="Start directly searching for target object (e.g. door, bottle)")
     default_cam = 1 if sys.platform == "darwin" else 0
     parser.add_argument("--camera", type=str, default=str(default_cam), help="Camera index (e.g. 0, 1) or IP stream URL (default: '1' on macOS, '0' on Windows)")
+    parser.add_argument("--location", type=str, default="cisco_lab", help="Location profile key (e.g. cisco_lab, home) or custom address (default: cisco_lab)")
     parser.add_argument("--conf", type=float, default=0.35, help="YOLO confidence threshold (default: 0.35)")
     parser.add_argument("--width", type=int, default=640, help="Frame width (default: 640)")
     parser.add_argument("--height", type=int, default=480, help="Frame height (default: 480)")

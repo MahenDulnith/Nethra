@@ -1,0 +1,23 @@
+{
+  "default": "cisco_lab",
+  "profiles": {
+    "cisco_lab": {
+      "title": "USJ Cisco Networking Lab",
+      "address": "Cisco Networking Laboratory, Department of Computer Science",
+      "campus": "University of Sri Jayewardenepura, Faculty of Applied Sciences",
+      "district": "Gangodawila, Nugegoda"
+    },
+    "home": {
+      "title": "Home",
+      "address": "2nd Lane, Vihara Mawatha, Malabe",
+      "campus": "Residential Area",
+      "district": "Colombo District, Western Province"
+    },
+    "usj_campus": {
+      "title": "USJ Main Campus",
+      "address": "University of Sri Jayewardenepura",
+      "campus": "Faculty of Applied Sciences",
+      "district": "Gangodawila, Nugegoda"
+    }
+  }
+}
