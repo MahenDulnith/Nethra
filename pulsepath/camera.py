@@ -8,30 +8,48 @@ import cv2
 import numpy as np
 
 
+import sys
+
+
 def get_camera_name(idx: int) -> str:
-    """Returns human-friendly camera name on macOS."""
-    if idx == 1:
-        return "iPhone (Continuity Camera)"
-    if idx == 0:
-        return "Mac FaceTime HD Camera"
+    """Returns human-friendly camera name."""
     if idx < 0:
         return "Synthetic Mock Stream"
+    if sys.platform == "darwin":
+        if idx == 1:
+            return "iPhone (Continuity Camera)"
+        if idx == 0:
+            return "Mac FaceTime HD Camera"
+    elif sys.platform == "win32":
+        if idx == 0:
+            return "Integrated Webcam (Index 0)"
+        if idx == 1:
+            return "External Camera (Index 1)"
     return f"Camera #{idx}"
 
 
 def _try_open(idx: int) -> Optional[cv2.VideoCapture]:
-    cap = cv2.VideoCapture(idx)
-    if cap.isOpened():
+    cap = None
+    if sys.platform == "win32":
+        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            cap = cv2.VideoCapture(idx)
+    else:
+        cap = cv2.VideoCapture(idx)
+
+    if cap is not None and cap.isOpened():
         ret, frame = cap.read()
         if ret and frame is not None:
             return cap
-    cap.release()
+        cap.release()
     return None
 
 
 def open_camera(preferred_idx: int) -> Tuple[Optional[cv2.VideoCapture], int]:
     """Attempts to open the preferred camera with automatic fallback."""
-    for idx in [preferred_idx] + [i for i in (1, 0, 2) if i != preferred_idx]:
+    priority = (1, 0, 2) if sys.platform == "darwin" else (0, 1, 2)
+    search_order = [preferred_idx] + [i for i in priority if i != preferred_idx]
+    for idx in search_order:
         print(f"[Camera] Trying index {idx} ({get_camera_name(idx)})...")
         cap = _try_open(idx)
         if cap is not None:
