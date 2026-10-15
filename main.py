@@ -259,7 +259,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--doors-model", type=str, default="pulsepath_doors_yolo11n.pt", help="Fine-tuned doors model (default: pulsepath_doors_yolo11n.pt)")
     parser.add_argument("--target", type=str, default=None, help="Start directly searching for target object (e.g. door, bottle)")
     default_cam = 1 if sys.platform == "darwin" else 0
-    parser.add_argument("--camera", type=int, default=default_cam, help="Camera index (default: 1 on macOS, 0 on Windows/Linux)")
+    parser.add_argument("--camera", type=str, default=str(default_cam), help="Camera index (e.g. 0, 1) or IP stream URL (default: '1' on macOS, '0' on Windows)")
     parser.add_argument("--conf", type=float, default=0.35, help="YOLO confidence threshold (default: 0.35)")
     parser.add_argument("--width", type=int, default=640, help="Frame width (default: 640)")
     parser.add_argument("--height", type=int, default=480, help="Frame height (default: 480)")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -11,8 +11,14 @@ import numpy as np
 import sys
 
 
-def get_camera_name(idx: int) -> str:
+def get_camera_name(source: Union[int, str]) -> str:
     """Returns human-friendly camera name."""
+    if isinstance(source, str) and any(source.startswith(p) for p in ("http://", "https://", "rtsp://")):
+        return f"IP Stream ({source[:28]}...)"
+    try:
+        idx = int(source)
+    except (ValueError, TypeError):
+        return str(source)
     if idx < 0:
         return "Synthetic Mock Stream"
     if sys.platform == "darwin":
@@ -24,7 +30,7 @@ def get_camera_name(idx: int) -> str:
         if idx == 0:
             return "Integrated Webcam (Index 0)"
         if idx == 1:
-            return "External Camera (Index 1)"
+            return "External/Mobile Cam (Index 1)"
     return f"Camera #{idx}"
 
 
@@ -45,8 +51,25 @@ def _try_open(idx: int) -> Optional[cv2.VideoCapture]:
     return None
 
 
-def open_camera(preferred_idx: int) -> Tuple[Optional[cv2.VideoCapture], int]:
-    """Attempts to open the preferred camera with automatic fallback."""
+def open_camera(preferred_source: Union[int, str]) -> Tuple[Optional[cv2.VideoCapture], Union[int, str]]:
+    """Attempts to open the preferred camera or IP stream with automatic fallback."""
+    # 1. IP stream URL support (e.g. DroidCam, IP Webcam app)
+    if isinstance(preferred_source, str) and any(preferred_source.startswith(p) for p in ("http://", "https://", "rtsp://")):
+        print(f"[Camera] Connecting to mobile IP stream: {preferred_source}...")
+        cap = cv2.VideoCapture(preferred_source)
+        if cap.isOpened():
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                print(f"[Camera] Connected to {get_camera_name(preferred_source)} successfully.")
+                return cap, preferred_source
+        print("[Camera Error] Failed to connect to IP stream. Falling back to local webcam...")
+        preferred_source = 0 if sys.platform == "win32" else 1
+
+    try:
+        preferred_idx = int(preferred_source)
+    except (ValueError, TypeError):
+        preferred_idx = 0 if sys.platform == "win32" else 1
+
     priority = (1, 0, 2) if sys.platform == "darwin" else (0, 1, 2)
     search_order = [preferred_idx] + [i for i in priority if i != preferred_idx]
     for idx in search_order:
