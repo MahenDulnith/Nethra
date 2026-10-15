@@ -13,6 +13,7 @@ __pycache__/
 *.onnx
 *.engine
 *.mlpackage
+*.task
 yolo11n*
 runs/
 datasets/images/
