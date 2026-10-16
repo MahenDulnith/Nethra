@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Assistive Vision Prototype (PulsePath)
+"""Nethra: Edge-AI Assistive Vision & Spatial Haptic Navigation Prototype.
 
-Main orchestrator for real-time edge computer vision, guided search mode,
-spatial haptic steering (left/right wristbands), and contextual scene intelligence.
+Real-time Edge-AI spatial obstacle detection, dual-wristband haptic routing,
+guided hand-to-object micro-navigation, and contextual scene awareness for
+visually impaired users.
+Supports Dual-Model Ensemble: COCO-80 (people, vehicles, indoor items) +
+Custom Fine-Tuned Model (doors, wardrobes, windows, beds).
 """
 
 from __future__ import annotations
@@ -10,270 +13,429 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import cv2
 
-from pulsepath.audio import AudioFeedback
-from pulsepath.camera import create_mock_frame, get_camera_name, open_camera
-from pulsepath.commands import FIND_KEYS
-from pulsepath.context import ContextSceneTracker
-from pulsepath.detection import EnsembleDetector, SpatialRoutingEngine
-from pulsepath.guidance import GuidanceConfig, GuidanceStateMachine
-from pulsepath.hand_tracker import HandTracker
-from pulsepath.haptics import HapticPatternEngine
-from pulsepath.hud import render_hud
+from adapters.camera.base import CameraSource, get_camera_name, open_camera
+from adapters.camera.factory import CameraFactory
+from adapters.camera.mock_camera import create_mock_frame
+from adapters.haptic.pattern_engine import HapticPatternEngine
+from contracts.detection import Detection
+from contracts.frame import LensStatus, SourceId
+from contracts.haptic_command import GuidanceState, HapticFeedbackState
+from features.context_routines.context_tracker import ContextSceneTracker
+from features.lookaround.commands import FIND_KEYS, parse_intent
+from features.lookaround.guidance import GuidanceStateMachine
+from services.arbiter.channel_policy import DispatchChannel
+from services.arbiter.rule_arbiter import RuleArbiter
+from services.safety.hand_tracker import HandTracker
+from services.safety.safety_engine import SafetyEngine
+from services.safety.spatial_router import SpatialRoutingEngine
+from services.safety.yolo_ensemble import (
+    YoloEnsembleDetector,
+    compute_iou,
+    disambiguate_multi_bed_candidates,
+    merge_candidate_detections,
+)
+from services.voice.speech_dispatcher import SpeechDispatcher
+from shell.hud.opencv_hud import render_hud
+
+__all__ = [
+    "Detection",
+    "HapticFeedbackState",
+    "SpatialRoutingEngine",
+    "ContextSceneTracker",
+    "compute_iou",
+    "disambiguate_multi_bed_candidates",
+    "merge_candidate_detections",
+    "get_camera_name",
+    "open_camera",
+    "create_mock_frame",
+    "render_hud",
+    "run_pipeline",
+    "parse_arguments",
+]
 
 
-def run_pipeline(args: argparse.Namespace):
-    """Main execution loop for PulsePath Assistive Vision."""
-    # 1. Initialize Audio Engine (Non-blocking TTS and system chimes)
-    audio = AudioFeedback(enabled=not args.no_audio)
+def resolve_camera_source(args: argparse.Namespace) -> CameraSource:
+    """Instantiates the appropriate CameraSource via CameraFactory or explicit CLI flags."""
+    if args.mock:
+        return CameraFactory.create("synthetic_mock")
 
-    # 2. Initialize Detectors (Dual-Model Ensemble)
-    try:
-        detector = EnsembleDetector(
-            coco_model=args.coco_model,
-            doors_model=args.doors_model,
-            conf=args.conf,
-        )
-    except Exception as exc:
-        print(f"[Fatal] Failed to load detection models: {exc}")
+    cli_overrides = {
+        "width": args.width,
+        "height": args.height,
+    }
+
+    if args.camera_url:
+        cli_overrides["stream_url"] = args.camera_url
+        return CameraFactory.create("android_usb", cli_overrides=cli_overrides)
+
+    if args.camera_profile:
+        return CameraFactory.create(args.camera_profile, cli_overrides=cli_overrides)
+
+    if args.camera != 1:
+        cli_overrides["device_index"] = args.camera
+        return CameraFactory.create("uvc_webcam", cli_overrides=cli_overrides)
+
+    return CameraFactory.create("auto", cli_overrides=cli_overrides)
+
+
+def run_pipeline(args: argparse.Namespace) -> None:
+    """Main execution loop for Nethra YOLO11 assistive vision, safety engine, and spatial routing."""
+    detector = YoloEnsembleDetector(
+        coco_model_path=args.coco_model,
+        doors_model_path=args.doors_model,
+        iou_thresh=0.45,
+    )
+    if not detector.is_ready:
+        print("[Fatal Error] No YOLO model could be loaded.")
         sys.exit(1)
 
-    # 3. Initialize Hand Tracking
-    hand_tracker = HandTracker(min_confidence=0.5)
+    mode_label = detector.mode_label
 
-    # 4. Initialize Engines
-    spatial_engine = SpatialRoutingEngine(min_area_ratio=0.015, max_area_ratio=0.35)
-    guidance = GuidanceStateMachine(GuidanceConfig())
-    haptic_engine = HapticPatternEngine(override_threshold=80.0)
-    context_tracker = ContextSceneTracker(location=args.location)
+    camera = resolve_camera_source(args)
+    if not camera.start():
+        print(f"[Warning] Failed to start preferred camera ({camera.name}). Falling back to synthetic mock stream.")
+        camera.release()
+        camera = CameraFactory.create("synthetic_mock")
+        camera.start()
 
-    # If starting with an initial target (e.g. --target door)
-    if args.target:
-        initial_out = guidance.start(args.target, time.time())
-        if initial_out.speech:
-            audio.speak(initial_out.speech)
+    # Initialize L2 Safety Engine (Hygiene, Detector, Tracker, Growth Estimator, Spatial Router)
+    router = SpatialRoutingEngine(
+        min_area_ratio=0.015,
+        max_area_ratio=0.35,
+        fov_area_scale=camera.fov_area_scale,
+    )
+    safety_engine = SafetyEngine(
+        detector=detector,
+        spatial_router=router,
+    )
+    rule_arbiter = RuleArbiter()
+    context_tracker = ContextSceneTracker(location=getattr(args, "location", None))
+    speech = SpeechDispatcher(
+        enabled=not (args.mute or getattr(args, "no_audio", False)),
+        use_clock_face=not args.relative_directions,
+    )
 
-    # 5. Video Capture Setup
-    use_mock = args.mock
-    cap = None
-    current_cam_idx = args.camera
+    # Initialize L4/L2/L1 Guided Search Engine
+    guidance_sm = GuidanceStateMachine()
+    hand_tracker = HandTracker()
+    haptic_pattern = HapticPatternEngine()
 
-    if not use_mock:
-        cap, current_cam_idx = open_camera(current_cam_idx)
-        if cap is None:
-            if not args.headless:
-                print("[Fatal] Could not open hardware camera. Check camera permissions or pass --mock.")
-                audio.shutdown()
-                hand_tracker.close()
-                sys.exit(1)
-            print("[Warning] No video camera opened. Falling back to synthetic mock stream.")
-            use_mock = True
-        else:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
+    initial_target = getattr(args, "target", None)
+    if initial_target:
+        intent = parse_intent(f"find {initial_target}")
+        if intent and intent.target:
+            out = guidance_sm.start(intent.target, now=time.time())
+            if out.speech:
+                speech.say(out.speech)
 
-    print("\n" + "=" * 68)
-    print(" PulsePath AI - Assistive Vision & Guided Search Active")
-    print(f" - Vision Models: {detector.mode_label}")
-    print(f" - Active Camera: {get_camera_name(current_cam_idx)}")
-    print(f" - Hand Tracking: {hand_tracker.backend}")
-    print(" Controls:")
-    print("   [F] Find Door        | [B] Find Bottle    | [X] Cancel Guidance")
-    print("   [C] Switch Camera    | [W] Where Am I?    | [M] Mute/Unmute Audio")
-    print("   [Q] Quit")
-    print("=" * 68 + "\n")
+    print("\n" + "=" * 65)
+    print(" Nethra Assistive Vision Prototype Active")
+    print(f" - Vision Engine: {mode_label}")
+    print(f" - Active Camera: {camera.name} (FOV Scale: {camera.fov_area_scale}x)")
+    print(f" - Voice Engine:  {'Muted' if not speech.enabled else 'Active (Offline TTS)'}")
+    print(f" - Directions:    {'Relative (Left/Right)' if args.relative_directions else 'Clock-Face (10-2 o\'clock)'}")
+    print(f" - Ears-Free:     {'Advisory Haptic-Only' if not args.voice_advisory else 'All Speech Enabled'}")
+    print(" - Keys: [F] Find Door | [B] Find Bottle | [X] Cancel Guidance")
+    print("         [C] Cycle Camera | [W] Where Am I? | [M] Mute | [Q] Quit")
+    print("=" * 65 + "\n")
 
     frame_count = 0
     prev_time = time.time()
     current_fps = 0.0
-    location_banner: Optional[str] = None
+    location_banner = None
     location_banner_time = 0.0
-    toast_banner: Optional[str] = f"Connected: {get_camera_name(current_cam_idx)}"
+    toast_banner = f"Connected: {camera.name}"
     toast_time = time.time()
 
     try:
         while True:
             frame_count += 1
+            ret, frame, capture_ts = camera.read()
+            if not ret or frame is None:
+                time.sleep(0.01)
+                continue
+
+            h, w, _ = frame.shape
             now = time.time()
 
-            # Acquire Frame
-            if use_mock:
-                frame = create_mock_frame(args.width, args.height, frame_count)
-                time.sleep(0.03)
-            else:
-                ret, frame = cap.read()
-                if not ret or frame is None:
-                    time.sleep(0.05)
-                    continue
+            # 1. Run Offline Safety Engine
+            detections, haptic_state, candidate_alerts, lens_status = safety_engine.process(
+                frame=frame,
+                timestamp_ns=capture_ts,
+                conf=args.conf,
+            )
 
-            fh, fw = frame.shape[:2]
+            # Lens hygiene warning feedback
+            if lens_status != LensStatus.OK and lens_status != LensStatus.BLURRED:
+                toast_banner = f"Camera Alert: Lens {lens_status.value}"
+                toast_time = now
 
-            # 1. Run Object Detections (Dual Ensemble)
-            candidates = detector.detect(frame)
-            boxes = [c[0] for c in candidates]
-            scores = [c[1] for c in candidates]
-            labels = [c[2] for c in candidates]
+            # 2. Run Guided Search State Machine (if active)
+            hand_pt = None
+            if guidance_sm.needs_hand_tracking:
+                hand_pt = hand_tracker.detect(frame)
 
-            detections = spatial_engine.build_detections(boxes, scores, labels, fw, fh)
-            obstacle_state = spatial_engine.compute_state(detections)
-
-            # 2. Hand Tracking (Index Fingertip)
-            hand_point = None
-            if guidance.needs_hand_tracking:
-                hand_point = hand_tracker.detect(frame)
-
-            # 3. Guided Search State Machine Update
-            g_out = guidance.update(
+            guidance_out = guidance_sm.update(
                 detections=detections,
-                hand_point=hand_point,
-                frame_width=fw,
-                frame_height=fh,
+                hand_point=hand_pt,
+                frame_width=w,
+                frame_height=h,
                 now=now,
             )
+            if guidance_out.chime:
+                speech.chime(guidance_out.chime)
+            if guidance_out.speech:
+                speech.say(guidance_out.speech)
+                toast_banner = guidance_out.speech
+                toast_time = now
 
-            # 4. Audio Feedback (Speech & Chimes)
-            if g_out.chime:
-                audio.chime(g_out.chime)
-            if g_out.speech:
-                audio.speak(g_out.speech, now=now)
-
-            # Context Scene Update (e.g. morning in bed)
-            context_msg = context_tracker.update(detections)
-            if context_msg:
-                audio.speak(context_msg, now=now)
-
-            # 5. Haptic Pattern Engine (Guidance + Obstacle Safety Override)
-            haptic_out = haptic_engine.compute(
-                command=g_out.command,
-                magnitude=g_out.magnitude,
-                now=now,
-                obstacle=obstacle_state,
-                guidance_active=guidance.active,
-            )
-
-            # 6. Telemetry Logging (Every 30 frames)
-            if frame_count % 30 == 0:
-                h_source = f"[{haptic_out.source.upper()}]"
-                g_str = f"Mode: {guidance.state.value}"
-                if guidance.active and guidance.target_name:
-                    g_str += f" ({guidance.target_name})"
-                print(
-                    f"[Telemetry] Frame {frame_count:04d} | "
-                    f"Left: {haptic_out.left_pwm:4.1f}% | "
-                    f"Right: {haptic_out.right_pwm:4.1f}% | "
-                    f"{h_source} {haptic_out.label} | {g_str}"
+            # Merge obstacle PWM with Guided Search pulse patterns
+            if guidance_out.active:
+                haptic_out = haptic_pattern.compute(
+                    command=guidance_out.command,
+                    magnitude=guidance_out.magnitude,
+                    now=now,
+                    obstacle=haptic_state,
+                    guidance_active=guidance_out.active,
+                )
+                active_threat = (
+                    f"GUIDANCE: {haptic_out.label}"
+                    if haptic_out.source == "guidance"
+                    else haptic_state.active_threat
+                )
+                haptic_state = HapticFeedbackState(
+                    left_pwm=haptic_out.left_pwm,
+                    right_pwm=haptic_out.right_pwm,
+                    active_threat=active_threat,
                 )
 
-            # Clear temporary banners
+            # 3. Run Deterministic Rule Arbiter
+            winning_alert, dispatch_channel = rule_arbiter.arbitrate(candidate_alerts)
+            if winning_alert is not None and not guidance_out.active:
+                dir_label = (
+                    winning_alert.direction_sector.value
+                    if args.relative_directions
+                    else winning_alert.direction_sector.clock_face
+                )
+                toast_banner = f"[{winning_alert.tier.value}] {winning_alert.object_class.upper()} {dir_label}"
+                toast_time = now
+
+                # Ears-Free Policy:
+                # - CRITICAL alerts dispatch to BOTH haptic and speech (interrupting).
+                # - ADVISORY alerts dispatch to HAPTIC_ONLY unless user explicitly flags --voice-advisory.
+                # - SOCIAL alerts dispatch to SPEECH_ONLY.
+                should_speak = (
+                    dispatch_channel in (DispatchChannel.BOTH, DispatchChannel.SPEECH_ONLY)
+                    or (dispatch_channel == DispatchChannel.HAPTIC_ONLY and args.voice_advisory)
+                )
+                if should_speak:
+                    speech.dispatch_alert(winning_alert)
+
+            # 4. Context Routine Update (bed detection, morning routine)
+            context_msg = context_tracker.update(detections)
+            if context_msg:
+                speech.say(context_msg)
+
+            # Telemetry printing every 30 frames
+            if frame_count % 30 == 0:
+                threat_info = (
+                    f"Threat: {haptic_state.active_threat}"
+                    if haptic_state.active_threat
+                    else "Clear"
+                )
+                arbiter_info = f" | Alert: {winning_alert.tier.value}" if winning_alert else ""
+                print(
+                    f"[Telemetry] Frame {frame_count:04d} | "
+                    f"Left PWM: {haptic_state.left_pwm:4.1f}% | "
+                    f"Right PWM: {haptic_state.right_pwm:4.1f}% | "
+                    f"{threat_info}{arbiter_info}"
+                )
+
             if location_banner and (now - location_banner_time > 5.0):
                 location_banner = None
             if toast_banner and (now - toast_time > 4.0):
                 toast_banner = None
 
-            # Calculate FPS
             dt = now - prev_time
             prev_time = now
             if dt > 0:
                 current_fps = (current_fps * 0.9) + ((1.0 / dt) * 0.1)
 
-            # 7. Render Visual HUD
             annotated = render_hud(
                 frame=frame,
                 detections=detections,
-                haptics=haptic_out,
-                guidance=g_out,
+                haptics=haptic_state,
+                context_msg=context_msg,
                 fps=current_fps,
-                camera_name=get_camera_name(current_cam_idx if not use_mock else -1),
-                speech_subtitle=audio.last_message if (now - audio.last_message_time < 5.0) else None,
-                toast_msg=toast_banner,
+                camera_idx=camera.name,
                 location_msg=location_banner,
+                toast_msg=toast_banner,
+                model_mode_label=mode_label,
+                guidance=guidance_out,
             )
 
-            # 8. Interactive Keyboard & Window Handling
             if not args.headless:
-                cv2.imshow("PulsePath - Assistive Vision Prototype", annotated)
+                cv2.imshow("Nethra - Assistive Vision Prototype", annotated)
                 key = cv2.waitKey(1) & 0xFF
-
                 if key == ord("q"):
                     print("[Pipeline] Exiting on user request.")
                     break
-
-                elif key in FIND_KEYS:
-                    target_name = FIND_KEYS[key]
-                    out = guidance.start(target_name, now=now)
-                    toast_banner = f"Search started: {target_name.upper()}"
-                    toast_time = now
-                    if out.speech:
-                        audio.speak(out.speech, now=now)
-
-                elif key == ord("x"):
-                    out = guidance.cancel(now=now, speech="Guidance stopped.")
-                    toast_banner = "Guidance Cancelled"
-                    toast_time = now
-                    if out.speech:
-                        audio.speak(out.speech, now=now)
-
                 elif key == ord("w"):
-                    speech_text, hud_text = context_tracker.query_location(detections)
-                    location_banner = hud_text
-                    location_banner_time = now
-                    audio.speak(speech_text, now=now)
-
+                    spoken_loc, hud_loc = context_tracker.query_location_details(detections)
+                    location_banner = hud_loc
+                    location_banner_time = time.time()
+                    print(f"[Location Query Response] {spoken_loc}")
+                    speech.say(spoken_loc)
                 elif key == ord("m"):
-                    is_muted = audio.toggle_mute()
-                    toast_banner = "Audio Muted" if is_muted else "Audio Unmuted"
-                    toast_time = now
-                    print(f"[Audio] {'Muted' if is_muted else 'Unmuted'}")
-
-                elif key == ord("c") and not use_mock:
-                    new_idx = 0 if current_cam_idx in (1, "1") else 1
-                    print(f"\n[Camera] User requested switch to index {new_idx} ({get_camera_name(new_idx)})...")
-                    if cap is not None:
-                        cap.release()
-                    new_cap, actual_new = open_camera(new_idx)
-                    if new_cap is not None:
-                        cap = new_cap
-                        current_cam_idx = actual_new
-                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
-                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
-                        toast_banner = f"Switched: {get_camera_name(current_cam_idx)}"
+                    muted = speech.toggle_mute()
+                    toast_banner = "Audio Muted" if muted else "Audio Active"
+                    toast_time = time.time()
+                elif key == ord("x"):
+                    out_cancel = guidance_sm.cancel(now=time.time())
+                    if out_cancel.speech:
+                        speech.say(out_cancel.speech)
+                        toast_banner = out_cancel.speech
                         toast_time = time.time()
+                elif 0 <= key < 256 and chr(key) in FIND_KEYS:
+                    target = FIND_KEYS[chr(key)]
+                    out_start = guidance_sm.start(target, now=time.time())
+                    if out_start.speech:
+                        speech.say(out_start.speech)
+                    toast_banner = f"Finding {target}..."
+                    toast_time = time.time()
+                elif key == ord("c"):
+                    print("\n[Camera] User requested camera cycle...")
+                    camera.release()
+                    if camera.source_id.value in ("IPHONE", "ANDROID_USB", "ANDROID_IP"):
+                        camera = CameraFactory.create("uvc_webcam", cli_overrides={"width": args.width, "height": args.height})
                     else:
-                        print(f"[Camera Error] Could not switch to index {new_idx}.")
-                        toast_banner = f"Error opening camera #{new_idx}"
-                        toast_time = time.time()
+                        camera = CameraFactory.create("auto", cli_overrides={"width": args.width, "height": args.height})
+
+                    if not camera.start():
+                        print("[Camera Error] Could not open alternate camera. Falling back to mock.")
+                        camera = CameraFactory.create("synthetic_mock")
+                        camera.start()
+
+                    safety_engine.spatial_router.fov_area_scale = camera.fov_area_scale
+                    toast_banner = f"Switched: {camera.name}"
+                    toast_time = time.time()
+                    speech.say(f"Switched to {camera.name}")
             else:
                 if args.max_frames and frame_count >= args.max_frames:
-                    print(f"[Pipeline] Reached max frames ({args.max_frames}). Completed successfully.")
                     break
 
     finally:
-        audio.shutdown()
         hand_tracker.close()
-        if cap is not None:
-            cap.release()
+        speech.shutdown()
+        camera.release()
         cv2.destroyAllWindows()
 
 
 def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="PulsePath Assistive Vision Prototype")
-    parser.add_argument("--coco-model", type=str, default="yolo11n.pt", help="Base COCO-80 model path (default: yolo11n.pt)")
-    parser.add_argument("--doors-model", type=str, default="pulsepath_doors_yolo11n.pt", help="Fine-tuned doors model (default: pulsepath_doors_yolo11n.pt)")
-    parser.add_argument("--target", type=str, default=None, help="Start directly searching for target object (e.g. door, bottle)")
-    default_cam = 1 if sys.platform == "darwin" else 0
-    parser.add_argument("--camera", type=str, default=str(default_cam), help="Camera index (e.g. 0, 1) or IP stream URL (default: '1' on macOS, '0' on Windows)")
-    parser.add_argument("--location", type=str, default="cisco_lab", help="Location profile key (e.g. cisco_lab, home) or custom address (default: cisco_lab)")
-    parser.add_argument("--conf", type=float, default=0.35, help="YOLO confidence threshold (default: 0.35)")
-    parser.add_argument("--width", type=int, default=640, help="Frame width (default: 640)")
-    parser.add_argument("--height", type=int, default=480, help="Frame height (default: 480)")
-    parser.add_argument("--mock", action="store_true", help="Run with synthetic test stream")
-    parser.add_argument("--headless", action="store_true", help="Run without opening graphical window (for tests)")
-    parser.add_argument("--no-audio", action="store_true", help="Disable audio speech and chimes")
-    parser.add_argument("--max-frames", type=int, default=0, help="Exit after N frames (useful for test runs)")
+    parser = argparse.ArgumentParser(description="Nethra Assistive Vision Prototype")
+    parser.add_argument(
+        "--coco-model",
+        type=str,
+        default="models/yolo11n.pt",
+        help="Base COCO-80 model path (default: models/yolo11n.pt)",
+    )
+    parser.add_argument(
+        "--doors-model",
+        "--model",
+        dest="doors_model",
+        type=str,
+        default="models/nethra_doors_yolo11n.pt",
+        help="Fine-tuned doors/assistive model path (default: models/nethra_doors_yolo11n.pt)",
+    )
+    parser.add_argument(
+        "--camera-profile",
+        type=str,
+        default="",
+        choices=["", "auto", "iphone_continuity", "android_usb", "android_ip", "uvc_webcam", "synthetic_mock", "file_replay"],
+        help="Named camera profile from config/camera.yaml (default: auto)",
+    )
+    parser.add_argument(
+        "--camera",
+        type=int,
+        default=1,
+        help="Camera device index (default: 1 for Phone Camera / Continuity Camera, 0 for Laptop Webcam)",
+    )
+    parser.add_argument(
+        "--camera-url",
+        type=str,
+        default="",
+        help="Stream URL for Android IP Webcam / ADB stream (e.g. http://127.0.0.1:8080/video)",
+    )
+    parser.add_argument(
+        "--conf",
+        type=float,
+        default=0.35,
+        help="YOLO confidence threshold (default: 0.35)",
+    )
+    parser.add_argument(
+        "--width",
+        type=int,
+        default=640,
+        help="Frame width (default: 640)",
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=480,
+        help="Frame height (default: 480)",
+    )
+    parser.add_argument(
+        "--mock",
+        action="store_true",
+        help="Run with synthetic test stream",
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run without opening graphical window (for tests)",
+    )
+    parser.add_argument(
+        "--max-frames",
+        type=int,
+        default=0,
+        help="Exit after N frames (useful for test runs)",
+    )
+    parser.add_argument(
+        "--mute",
+        action="store_true",
+        help="Disable spoken TTS audio feedback",
+    )
+    parser.add_argument(
+        "--no-audio",
+        action="store_true",
+        help="Alias for --mute: disable spoken TTS audio feedback",
+    )
+    parser.add_argument(
+        "--voice-advisory",
+        action="store_true",
+        help="Speak advisory obstacle alerts in addition to haptics (default: False, ears-free mode)",
+    )
+    parser.add_argument(
+        "--relative-directions",
+        action="store_true",
+        help="Use relative directions (left/right) instead of standard clock-face directions (10-2 o'clock)",
+    )
+    parser.add_argument(
+        "--target",
+        type=str,
+        default=None,
+        help="Start immediately in Guided Search mode for target (e.g., door, bottle)",
+    )
+    parser.add_argument(
+        "--location",
+        type=str,
+        default=None,
+        help="Override active location key from config/locations.json (e.g., home, cisco_lab, usj_campus)",
+    )
     return parser.parse_args()
 
 

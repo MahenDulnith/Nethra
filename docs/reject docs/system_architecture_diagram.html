@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Architecture — AI Personal Assistant for Visually Impaired Users</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .glow-red {
+      box-shadow: 0 0 25px rgba(239, 68, 68, 0.25);
+    }
+    .glow-blue {
+      box-shadow: 0 0 25px rgba(59, 130, 246, 0.25);
+    }
+    .glow-emerald {
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.25);
+    }
+    .glow-amber {
+      box-shadow: 0 0 25px rgba(245, 158, 11, 0.25);
+    }
+    .pulse-line {
+      stroke-dasharray: 8;
+      animation: dash 1.5s linear infinite;
+    }
+    @keyframes dash {
+      to {
+        stroke-dashoffset: -16;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6 lg:p-10 flex flex-col items-center justify-center">
+
+  <!-- Slide Canvas Container (16:9 Presentation Ready) -->
+  <div class="w-full max-w-7xl bg-slate-900/90 border border-slate-800 rounded-3xl p-6 lg:p-8 shadow-2xl relative overflow-hidden backdrop-blur-xl">
+    
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between pb-6 mb-6 border-b border-slate-800/80 gap-4">
+      <div>
+        <div class="flex items-center gap-3">
+          <span class="px-3 py-1 bg-indigo-500/20 text-indigo-400 text-xs font-bold rounded-full border border-indigo-500/30 uppercase tracking-widest">
+            System Architecture
+          </span>
+          <span class="px-3 py-1 bg-emerald-500/20 text-emerald-400 text-xs font-bold rounded-full border border-emerald-500/30 uppercase tracking-widest">
+            Dual-Engine AI + Hardware Map
+          </span>
+        </div>
+        <h1 class="text-2xl lg:text-3xl font-extrabold text-white tracking-tight mt-2">
+          AI Personal Assistant for Visually Impaired Users
+        </h1>
+        <p class="text-sm text-slate-400 mt-1">
+          Smart Glasses • Android Pocket Hub • Dual Haptic Wristbands • Bone-Conduction Audio • LangGraph Cloud
+        </p>
+      </div>
+
+      <!-- Quick Legend & Latency Badges -->
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-950/60 border border-red-800/50 text-red-300 text-xs font-semibold">
+          <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
+          Safety Loop: <span class="mono font-bold text-red-200">126ms</span>
+        </div>
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-800/50 text-emerald-300 text-xs font-semibold">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+          Speech Loop: <span class="mono font-bold text-emerald-200">350ms</span>
+        </div>
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-950/60 border border-blue-800/50 text-blue-300 text-xs font-semibold">
+          <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+          LangGraph Cloud: <span class="mono font-bold text-blue-200">Async</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Architecture Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+      
+      <!-- LEFT COLUMN: SENSORY INPUT & GROUND TOOLS (Glasses & Cane) -->
+      <div class="lg:col-span-3 flex flex-col gap-5 justify-between">
+        
+        <!-- Smart Glasses Card -->
+        <div class="bg-slate-900 border border-indigo-500/40 rounded-2xl p-5 glow-blue relative group hover:border-indigo-400 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-indigo-400">Eye-Level Visuals</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 mono border border-indigo-500/20">USB-C Tether</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-indigo-600/20 flex items-center justify-center border border-indigo-500/30 text-indigo-300 text-2xl">
+              👓
+            </div>
+            <div>
+              <h3 class="font-bold text-white text-base">Smart Glasses</h3>
+              <p class="text-xs text-slate-400">1080p @ 30 FPS • 120° DFOV</p>
+            </div>
+          </div>
+          <div class="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-400 space-y-1">
+            <div class="flex justify-between">
+              <span>Shutter Speed:</span>
+              <span class="text-slate-200 font-semibold mono">1/500s (Anti-Blur)</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Power Source:</span>
+              <span class="text-emerald-400 font-semibold">Phone Battery (0.8W)</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Fail-Safe:</span>
+              <span class="text-amber-400 font-semibold">Luminance Guard</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cane Grounding Card -->
+        <div class="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 glow-amber relative group hover:border-amber-400 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-amber-400">Ground Surface Invariant</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 font-bold border border-amber-500/20">Primary</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-amber-600/20 flex items-center justify-center border border-amber-500/30 text-amber-300 text-2xl">
+              🦯
+            </div>
+            <div>
+              <h3 class="font-bold text-white text-base">White Mobility Cane</h3>
+              <p class="text-xs text-slate-400">Ground texture & drop-offs</p>
+            </div>
+          </div>
+          <p class="mt-3 text-xs text-slate-400 border-t border-slate-800 pt-2 leading-relaxed">
+            <span class="text-amber-300 font-semibold">Cane-First Rule:</span> Open drains, curbs, and steps are tactilely verified by the cane. Assistant guards head/torso and vehicles.
+          </p>
+        </div>
+
+        <!-- Dual Haptic Wristbands -->
+        <div class="bg-slate-900 border border-red-500/40 rounded-2xl p-5 glow-red relative group hover:border-red-400 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-red-400">Tactile Directional Cues</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-300 mono border border-red-500/20">BLE 5.3 Sync</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-red-600/20 flex items-center justify-center border border-red-500/30 text-red-300 text-2xl">
+              ⌚
+            </div>
+            <div>
+              <h3 class="font-bold text-white text-base">Dual Wristbands</h3>
+              <p class="text-xs text-slate-400">Left & Right LRA Motors</p>
+            </div>
+          </div>
+          <div class="mt-3 pt-2 border-t border-slate-800 text-xs text-slate-400 space-y-1">
+            <div class="flex justify-between">
+              <span>Vibration Vector:</span>
+              <span class="text-slate-200 font-semibold">Left / Right / Ahead</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Cadence:</span>
+              <span class="text-red-400 font-semibold">Pulse Rate = Distance</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Motor Latency:</span>
+              <span class="text-slate-200 font-semibold mono">20ms Spin-Up</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CENTER COLUMN: THE ANDROID POCKET HUB (NEURAL CORE) -->
+      <div class="lg:col-span-6 bg-slate-900/95 border-2 border-slate-700/80 rounded-3xl p-6 relative flex flex-col justify-between shadow-xl">
+        
+        <!-- Pocket Hub Header -->
+        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 text-xl font-bold">
+              📱
+            </div>
+            <div>
+              <h2 class="text-lg font-extrabold text-white">Android Smartphone Hub</h2>
+              <p class="text-xs text-slate-400">Pocket Compute Engine • Snapdragon / Dimensity NPU</p>
+            </div>
+          </div>
+          <span class="px-3 py-1 bg-purple-500/20 text-purple-300 text-xs font-bold rounded-lg border border-purple-500/30 mono">
+            INT8 NPU Acceleration
+          </span>
+        </div>
+
+        <!-- Layer 1: Hardware Defense & Pre-processing -->
+        <div class="my-4 bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
+          <div class="flex items-center justify-between text-xs font-bold text-slate-300 mb-2">
+            <span>LAYER 1: SENSOR ACQUISITION & HARDWARE DEFENSE</span>
+            <span class="text-indigo-400 font-mono">10ms Latency</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="bg-slate-900 p-2 rounded-lg border border-slate-800">
+              <span class="text-slate-300 font-semibold">Laplacian Blur Filter</span>
+              <p class="text-slate-400 text-[11px] mt-0.5">Auto-drops jerky walking frames</p>
+            </div>
+            <div class="bg-slate-900 p-2 rounded-lg border border-slate-800">
+              <span class="text-slate-300 font-semibold">Luminance Guard</span>
+              <p class="text-slate-400 text-[11px] mt-0.5">Spoken alarm if &lt;15 lux (dark)</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Layer 2: 100% Offline Local Safety Engine (The Red Loop) -->
+        <div class="mb-4 bg-red-950/20 border border-red-500/40 rounded-xl p-3.5 glow-red">
+          <div class="flex items-center justify-between text-xs font-bold text-red-400 mb-2">
+            <span>LAYER 2: LOCAL SAFETY ENGINE (100% OFFLINE)</span>
+            <span class="text-red-300 font-mono">30 FPS • ~45ms Total</span>
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-xs">
+            <div class="bg-slate-900/90 p-2.5 rounded-lg border border-red-500/30">
+              <span class="text-white font-bold block">YOLO11-nano</span>
+              <span class="text-[11px] text-red-300">Vehicles, Tuk-Tuks, Poles, Drop-offs</span>
+            </div>
+            <div class="bg-slate-900/90 p-2.5 rounded-lg border border-red-500/30">
+              <span class="text-white font-bold block">YOLO-World</span>
+              <span class="text-[11px] text-red-300">Zero-Shot "Find Cane / Chair"</span>
+            </div>
+            <div class="bg-slate-900/90 p-2.5 rounded-lg border border-red-500/30">
+              <span class="text-white font-bold block">Depth v2 (Metric)</span>
+              <span class="text-[11px] text-red-300">Triggered on expanding boxes</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Layer 3: System 1 Orchestrator (Jev Mode) -->
+        <div class="mb-4 bg-amber-950/20 border border-amber-500/40 rounded-xl p-3.5">
+          <div class="flex items-center justify-between text-xs font-bold text-amber-400 mb-2">
+            <span>LAYER 3: SYSTEM 1 ORCHESTRATOR ("JEV MODE" GATEKEEPER)</span>
+            <span class="text-amber-300 font-mono">&lt;80ms Decision</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="bg-slate-900/90 p-2 rounded-lg border border-amber-500/30">
+              <span class="text-amber-200 font-bold">Fast Intent Router</span>
+              <p class="text-slate-400 text-[11px] mt-0.5">Routes: Safety Alert vs Voice Query vs Local Command</p>
+            </div>
+            <div class="bg-slate-900/90 p-2 rounded-lg border border-amber-500/30">
+              <span class="text-amber-200 font-bold">Interruption & Cooldown Arbiter</span>
+              <p class="text-slate-400 text-[11px] mt-0.5">Mutes voice during critical hazard; manages no-repeat</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Layer 4: Local Memory & Biometrics -->
+        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
+          <div class="flex items-center justify-between text-xs font-bold text-slate-300 mb-2">
+            <span>LAYER 4: PRIVACY-FIRST ON-DEVICE STORAGE</span>
+            <span class="text-emerald-400 font-mono">Encrypted SQLCipher</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="bg-slate-900 p-2 rounded-lg border border-slate-800">
+              <span class="text-emerald-400 font-bold">ArcFace (512-d Embeddings)</span>
+              <p class="text-slate-400 text-[11px]">Consensual face memory; no photos saved</p>
+            </div>
+            <div class="bg-slate-900 p-2 rounded-lg border border-slate-800">
+              <span class="text-emerald-400 font-bold">sqlite-vec Engine</span>
+              <p class="text-slate-400 text-[11px]">Instant on-device episodic vector search</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Phone Footer Status -->
+        <div class="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+          <span>Battery: <b class="text-emerald-400">4,500 mAh (~5.5h)</b></span>
+          <span>Thermal Target: <b class="text-indigo-400">&lt;40°C in pocket</b></span>
+          <span>Offline Resilience: <b class="text-red-400">100% Safety Operational</b></span>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: AUDIO OUTPUT & CLOUD INTELLIGENCE (LangGraph & Live VLM) -->
+      <div class="lg:col-span-3 flex flex-col gap-5 justify-between">
+        
+        <!-- Bone Conduction Audio Card -->
+        <div class="bg-slate-900 border border-emerald-500/40 rounded-2xl p-5 glow-emerald relative group hover:border-emerald-400 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Open-Ear Audio</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 mono border border-emerald-500/20">BT 5.3 A2DP</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-emerald-600/20 flex items-center justify-center border border-emerald-500/30 text-emerald-300 text-2xl">
+              🎧
+            </div>
+            <div>
+              <h3 class="font-bold text-white text-base">Bone-Conduction</h3>
+              <p class="text-xs text-slate-400">Open acoustic ear canals</p>
+            </div>
+          </div>
+          <div class="mt-3 pt-2 border-t border-slate-800 text-xs text-slate-400 space-y-1">
+            <div class="flex justify-between">
+              <span>Traffic Hearing:</span>
+              <span class="text-emerald-400 font-semibold">100% Unblocked</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Barge-in Cutoff:</span>
+              <span class="text-slate-200 font-semibold mono">&lt;100ms</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Persona:</span>
+              <span class="text-slate-200 font-semibold">Concise & Warm</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cloud Multimodal Live API Card -->
+        <div class="bg-slate-900 border border-blue-500/40 rounded-2xl p-5 glow-blue relative group hover:border-blue-400 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-blue-400">Live Speech & Vision</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 mono border border-blue-500/20">WebSocket</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-blue-600/20 flex items-center justify-center border border-blue-500/30 text-blue-300 text-2xl">
+              ☁️
+            </div>
+            <div>
+              <h3 class="font-bold text-white text-base">Multimodal Live</h3>
+              <p class="text-xs text-slate-400">Gemini Live / Cloud VLM</p>
+            </div>
+          </div>
+          <div class="mt-3 pt-2 border-t border-slate-800 text-xs text-slate-400 space-y-1">
+            <div class="flex justify-between">
+              <span>Speech-to-Speech:</span>
+              <span class="text-blue-300 font-semibold mono">~350ms Latency</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Offline Backup:</span>
+              <span class="text-purple-400 font-semibold">SmolVLM (2B ONNX)</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Look-Around Loop:</span>
+              <span class="text-slate-200 font-semibold">Guided Scanning</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- LangGraph Async Routine Worker Card -->
+        <div class="bg-slate-900 border border-purple-500/40 rounded-2xl p-5 relative group hover:border-purple-400 transition-all">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-bold uppercase tracking-wider text-purple-400">Async Reasoning Core</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 mono border border-purple-500/20">LangGraph Cloud</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-purple-600/20 flex items-center justify-center border border-purple-500/30 text-purple-300 text-2xl">
+              🕸️
+            </div>
+            <div>
+              <h3 class="font-bold text-white text-base">LangGraph Routines</h3>
+              <p class="text-xs text-slate-400">Multi-step async workflows</p>
+            </div>
+          </div>
+          <div class="mt-3 pt-2 border-t border-slate-800 text-xs text-slate-400 space-y-1">
+            <div class="flex justify-between">
+              <span>Morning Brief:</span>
+              <span class="text-slate-200 font-semibold">Calendar & Conflict Resolv</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Evening Diary:</span>
+              <span class="text-slate-200 font-semibold">50+ Memory Log Synthesis</span>
+            </div>
+            <div class="flex justify-between">
+              <span>LangSmith Role:</span>
+              <span class="text-purple-300 font-semibold">Offline Dataset Eval</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- Presentation Footer Notes -->
+    <div class="mt-6 pt-5 border-t border-slate-800 flex flex-col md:flex-row items-center justify-between text-xs text-slate-400 gap-4">
+      <div class="flex items-center gap-4">
+        <span>📍 <b>Key Design Insight:</b> Life safety is 100% on-device (YOLO11 + Jev). LangGraph is exclusively cloud-async.</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-slate-400">Presentation Ready • Target Latency: <b class="text-emerald-400">&lt;200ms Safety / &lt;400ms Voice</b></span>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>

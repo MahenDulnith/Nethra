@@ -1,22 +1,30 @@
-"""Unit tests for pulsepath.guidance state machine and multi-bed disambiguation."""
+"""Unit tests for Nethra Guided Search state machine and multi-bed disambiguation."""
 
 import unittest
-from pulsepath.detection import (
-    Detection,
+
+from contracts.detection import Detection
+from contracts.haptic_command import GuidanceCommand, GuidanceState
+from features.lookaround.guidance import (
+    GuidanceConfig,
+    GuidanceOutput,
+    GuidanceStateMachine,
+)
+from services.safety.yolo_ensemble import (
     disambiguate_multi_bed_candidates,
     merge_candidate_detections,
 )
-from pulsepath.guidance import (
-    GuidanceCommand,
-    GuidanceConfig,
-    GuidanceOutput,
-    GuidanceState,
-    GuidanceStateMachine,
-)
 
 
-def make_det(label: str, cx: float, cy: float = 240.0, w: float = 120.0, h: float = 240.0,
-             area_ratio: float = 0.10, conf: float = 0.85, zone: str = "CENTER") -> Detection:
+def make_det(
+    label: str,
+    cx: float,
+    cy: float = 240.0,
+    w: float = 120.0,
+    h: float = 240.0,
+    area_ratio: float = 0.10,
+    conf: float = 0.85,
+    zone: str = "CENTER",
+) -> Detection:
     x1 = int(cx - w / 2.0)
     x2 = int(cx + w / 2.0)
     y1 = int(cy - h / 2.0)

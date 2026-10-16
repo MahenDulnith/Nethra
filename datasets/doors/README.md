@@ -43,4 +43,4 @@ Once the dataset is in this folder, simply run:
 .venv/bin/python train.py --epochs 30
 ```
 
-Your M4 Mac will automatically use its GPU (Apple Silicon MPS) to train the model in ~10–15 minutes, producing `pulsepath_doors_yolo11n.pt`!
+Your M4 Mac will automatically use its GPU (Apple Silicon MPS) to train the model in ~10–15 minutes, producing `models/nethra_doors_yolo11n.pt`!

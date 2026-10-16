@@ -1,0 +1,57 @@
+patterns:
+  TURN_LEFT:
+    id: 1
+    pulse_count: 2
+    pulse_ms: 90
+    gap_ms: 110
+    intensity: 55
+    repeat: 1
+    description: "two short taps on the left wrist"
+  TURN_RIGHT:
+    id: 2
+    pulse_count: 2
+    pulse_ms: 90
+    gap_ms: 110
+    intensity: 55
+    repeat: 1
+    description: "two short taps on the right wrist"
+  FOUND:
+    id: 3
+    pulse_count: 1
+    pulse_ms: 280
+    gap_ms: 0
+    intensity: 50
+    repeat: 1
+    description: "one long smooth buzz on both wrists"
+  OBSTACLE_NEAR:
+    id: 4
+    pulse_count: 3
+    pulse_ms: 70
+    gap_ms: 90
+    intensity: 60
+    repeat: 1
+    description: "three quick taps on the side of the obstacle"
+  URGENT:
+    id: 5
+    pulse_count: 6
+    pulse_ms: 60
+    gap_ms: 50
+    intensity: 80
+    repeat: 2
+    description: "fast insistent burst, both wrists"
+  FAULT:
+    id: 6
+    pulse_count: 2
+    pulse_ms: 400
+    gap_ms: 250
+    intensity: 45
+    repeat: 1
+    description: "two slow heavy pulses, both wrists"
+  LOW_BATTERY:
+    id: 7
+    pulse_count: 1
+    pulse_ms: 150
+    gap_ms: 0
+    intensity: 35
+    repeat: 1
+    description: "one soft tap, the affected wrist only"

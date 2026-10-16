@@ -8,23 +8,25 @@ __pycache__/
 *.so
 .Python
 
-# PyTorch / Models
+# PyTorch / AI Models (large weights excluded; keep directory structure)
+models/*.pt
+models/*.task
+models/*.onnx
+models/*.engine
+models/*.mlpackage
+models/buffalo_sc/*
+!models/.gitkeep
 *.pt
 *.onnx
-*.engine
-*.mlpackage
-*.task
-yolo11n*
+*.zip
 runs/
 datasets/images/
 datasets/labels/
-*.zip
 
-# macOS
+# OS & IDEs
 .DS_Store
 .AppleDouble
 .LSOverride
-
-# IDE / Antigravity
 .idea/
 .vscode/
+Thumbs.db

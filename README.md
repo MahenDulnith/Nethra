@@ -1,123 +1,114 @@
-# PulsePath: Edge-AI Assistive Vision Prototype
+# Nethra: Edge-AI Assistive Vision & Spatial Haptic Navigation
 
-> **Real-time edge computer vision and spatial haptic navigation for visually impaired and blind individuals.**
+> **Real-time edge computer vision, spatial haptic navigation, and contextual scene intelligence for visually impaired and blind individuals.**
 
-PulsePath delivers ears-free, low-latency obstacle awareness and contextual scene intelligence using Edge AI. Instead of flooding the user's ears with continuous audio announcements, the system translates spatial geometry directly into dual-wristband haptic vibrations (Left & Right PWM signals) while maintaining full environmental awareness.
-
----
-
-## 🚀 Key Features
-
-1. **Dual-Model Ensemble Detection**:
-   - Runs **YOLO11 Nano (`yolo11n`)** for all 80 COCO classes (people, bottles, chairs, laptops, phones).
-   - Fine-tuned `pulsepath_doors_yolo11n.pt` for dedicated indoor door detection (~9.1ms latency on M4 GPU via Apple Metal Performance Shaders / MPS).
-   - IoU-based deduplication merges bounding boxes without catastrophic forgetting.
-
-2. **Interactive Guided Search Mode ("Help me find the door")**:
-   - Ask to find an object (**`F`** for door, **`B`** for bottle, **`P`** for person).
-   - **Scene Memory & Look-Around Voice**: If the target isn't visible, natural voice prompts describe what *is* seen: *"I can't see a door yet. I can see a table and a laptop. Please turn your head slowly to the left and right."*
-   - **Target Acquisition**: Plays a pleasant chime once the object is spotted and confirmed.
-
-3. **MediaPipe Hand Tracking & Directional Steering**:
-   - Uses MediaPipe Tasks `HandLandmarker` on Apple Silicon CPU via XNNPACK delegate.
-   - Detects user's raised hand (index fingertip) and steers it:
-     - Target to left of hand $\to$ Left wristband pulses.
-     - Target to right of hand $\to$ Right wristband pulses.
-     - Directional vector arrow draws between hand fingertip and target crosshair.
-   - **On Target Pattern**: When pointed directly at target ($\pm 8\%$ tolerance), both wristbands pulse in a synchronised `"da-DUM"` pattern with audio confirmation: *"Your hand is pointing at the door. Walk that way."*
-
-4. **Dual-Wristband Visual HUD**:
-   - Tactile watch-strap widgets on the left and right display borders pulse with real-time PWM intensity ($0\% - 100\%$) and dynamic threat glow.
-   - Color-coded bounding boxes (green $\to$ amber $\to$ red).
-
-5. **Safety Priority Override**:
-   - Any obstacle in the immediate walking path exceeding $80\%$ collision proximity immediately preempts guidance haptics with continuous obstacle warning.
-
-6. **Contextual Scene & Wake-Up Intelligence**:
-   - Bed detection triggers morning greeting: *"Good morning! You are in your bed right now."*
-   - Location queries (**`W`** key): *"Where am I?"* (e.g., University of Sri Jayewardenepura campus context).
+**Nethra** delivers ears-free, low-latency obstacle awareness and conversational scene understanding using Edge AI. Instead of overwhelming the user's ears with continuous spoken audio announcements, Nethra translates spatial obstacle geometry directly into **dual-wristband haptic vibrations (Left & Right PWM / BLE signals)** while reserving spoken announcements for high-priority safety alerts and on-demand scene queries.
 
 ---
 
-## 🛠️ Quick Start
+## Key Features
 
-### 1. Prerequisites
-- macOS (tested on Apple Silicon M4 / M3 / M2 / M1)
-- Python 3.11 - 3.13
-- iPhone with Continuity Camera (optional; Mac FaceTime HD webcam or synthetic mock stream supported)
+1. **Dual-Model YOLO11 Nano Ensemble (`L2` Offline Safety Engine)**:
+   - Runs **Base YOLO11 Nano (`models/yolo11n.pt`)** for all 80 COCO classes (`person`, `car`, `motorcycle`, `chair`, `bed`, `bottle`, etc.) alongside a **Fine-Tuned Assistive Model (`models/nethra_doors_yolo11n.pt`)** for structural navigation classes (`door`, `handle`, `stairs`, indoor hazards) with IoU Non-Maximum Suppression deduplication.
+   - Automatically accelerates on **NVIDIA CUDA** (Windows/Linux), **Apple Silicon MPS** (M1–M4 Macs), or **CPU**.
 
-### 2. Setup Environment
+2. **Spatial Haptic Routing (Left / Center / Right)**:
+   - **Horizontal Zone Division**:
+     - **Left Third (`LEFT`)**: Triggers Left Wristband vibration.
+     - **Center Third (`CENTER`)**: Direct collision path ahead (triggers both Left & Right wristbands simultaneously).
+     - **Right Third (`RIGHT`)**: Triggers Right Wristband vibration.
+   - **Proximity PWM Modulation**: Bounding-box area ratio maps smoothly to vibration duty cycle ($0\% - 100\%$).
+
+3. **Cross-Platform Camera HAL (`L1` Adapters)**:
+   - **macOS + iPhone**: Continuity Camera (`--camera 1`, Ultra-Wide `0.5x`).
+   - **Windows + Android**: USB ADB stream / DroidCam / IP Webcam (`--camera-url http://127.0.0.1:8080/video` or `--camera 1`).
+   - **Synthetic Mock Feed**: Built-in oscillating obstacle corridor (`--mock`) for hardware-free testing and CI.
+
+4. **Contextual Scene & Wake-Up Intelligence (`L4` Features)**:
+   - Recognizes routine contexts (e.g., detecting a `bed` in view triggers a morning wake-up greeting).
+   - Interactive location & scene query (`[W]` key: *"Where am I?"*).
+
+---
+
+## Quick Start
+
+### 1. Setup Environment
 ```bash
-# Clone the repository
-git clone https://github.com/MahenDulnith/Nethra.git
-cd Nethra
-
 # Create virtual environment
-python3 -m venv .venv
+python -m venv .venv
+
+# Activate (Windows PowerShell)
+.venv\Scripts\Activate.ps1
+# Or Activate (macOS / Linux)
+source .venv/bin/activate
 
 # Install dependencies
-.venv/bin/pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
-### 3. Running the Prototype
+### 2. Running Nethra
 
-#### Live Video (iPhone Continuity Camera):
+#### Option A: macOS with iPhone Continuity Camera
 ```bash
-.venv/bin/python main.py --camera 1
+python main.py --camera 1
 ```
 
-#### Live Video (Mac FaceTime HD Camera):
+#### Option B: Windows with Android Phone Camera (USB ADB or IP Webcam / DroidCam)
 ```bash
-.venv/bin/python main.py --camera 0
+# If using DroidCam / USB Virtual Webcam:
+python main.py --camera 1
+
+# If using IP Webcam over USB ADB forwarding (adb forward tcp:8080 tcp:8080) or Wi-Fi:
+python main.py --camera-url http://127.0.0.1:8080/video
 ```
 
-#### Synthetic Mock Feed (Headless or test mode):
+#### Option C: Synthetic Mock Stream (No camera required)
 ```bash
-.venv/bin/python main.py --mock
+python main.py --mock
 ```
 
-### 4. Interactive Keyboard Controls
-| Key | Action |
-|:---:|:---|
-| **`F`** | Start Guided Search for **Door** |
-| **`B`** | Start Guided Search for **Bottle** |
-| **`P`** | Start Guided Search for **Person** |
-| **`X`** | Cancel search / return to obstacle navigation |
-| **`C`** | Switch camera input (iPhone $\leftrightarrow$ Mac) |
-| **`W`** | Where am I? (Contextual announcement) |
-| **`M`** | Mute / Unmute voice audio |
-| **`Q`** | Quit application |
+### 3. Interactive Controls
+- **`c`** — Cycle active cameras (Phone Camera ↔ Laptop Webcam)
+- **`w`** — Trigger contextual location query (*"Where am I?"*)
+- **`q`** — Quit cleanly
 
 ---
 
-## 🧪 Running Tests
+## Running Unit Tests & Fine-Tuning
 
-Run the full unit test suite (guidance state machine + haptic pattern generator):
 ```bash
-MPLCONFIGDIR=/tmp/matplotlib .venv/bin/python -m unittest discover tests
+# Run unit test suite
+python test_spatial.py
+# or
+python -m unittest discover -s tests
+
+# Fine-tune custom doors/obstacles YOLO11n model (auto-detects CUDA / MPS / CPU)
+python train.py --data datasets/doors/data.yaml --epochs 30
 ```
 
 ---
 
-## 📂 Project Structure
+## Project Architecture & Directory Structure (L0 – L5)
 
-```
-├── main.py                     # Main application orchestrator
-├── pulsepath/                  # Modular package
-│   ├── detection.py            # Dual-model ensemble & spatial routing engine
-│   ├── guidance.py             # Guided search state machine & look-around memory
-│   ├── haptics.py              # Time-varying PWM haptic pattern engine
-│   ├── hand_tracker.py         # MediaPipe Tasks index-fingertip hand tracker
-│   ├── hud.py                  # High-contrast visual HUD & dual wristband widgets
-│   ├── audio.py                # Non-blocking async TTS (say) & system chimes (afplay)
-│   ├── camera.py               # Camera opening, fallback & synthetic stream generator
-│   ├── context.py              # Scene tracker (bed wake-up, location query)
-│   └── commands.py             # Key shortcuts & voice intent parser
-├── tests/
-│   ├── test_guidance.py        # 6 unit tests for guidance transitions & tolerance
-│   └── test_haptics.py         # 7 unit tests for pulse modulation & safety overrides
-├── requirements.txt            # Pinned dependencies
-├── architecture_context.md     # System architecture & hardware roadmap
-└── Document/
-    └── Edge AI Glasses for Blind.pdf
+```text
+Nethra/
+├── main.py                  # Root CLI launcher
+├── train.py                 # Root CLI entry point for YOLO11n fine-tuning
+├── test_spatial.py          # Root unit test runner
+├── requirements.txt         # Cross-platform Python dependencies
+├── config/                  # Thresholds, classes, phrasebook, haptic patterns, & providers
+├── models/                  # Model weights (yolo11n.pt, nethra_doors_yolo11n.pt, buffalo_sc/)
+├── contracts/               # L0: Platform-free data contracts (FrameData, Detection, SafetyAlert, HapticCommand)
+├── adapters/                # L1: Hardware adapters (Camera HAL, Audio, BLE Haptics, MonotonicClock, Storage)
+├── services/                # L2 (Offline Hygiene, YOLO Ensemble, Spatial Router, Arbiter, Memory) & L3 (Voice, Vision, Agent)
+├── features/                # L4: User workflows (Context Scene Tracker, Guided Look-Around, People, Failsafe)
+├── shell/                   # L5: AppGraph wiring, Power modes, & OpenCV HUD (shell/hud/opencv_hud.py)
+├── instrumentation/         # Latency probes & structured JSONL logging
+├── training/                # YOLO11n transfer learning & edge export scripts
+├── datasets/                # Dataset configurations (HomeObjects-3K.yaml, doors/data.yaml)
+├── tests/                   # Unit & invariant test suites
+├── firmware/                # ESP32-C3 wristband C/C++ firmware
+├── harness/                 # Session replay, benchmark suite, and results analysis
+├── ci/                      # Architecture dependency & safety phrasebook linters
+└── docs/                    # Master specification, implementation plan, and research papers
 ```

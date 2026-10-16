@@ -1,4 +1,4 @@
-# PulsePath Door Detection Dataset Configuration
+# Nethra Door Detection Dataset Configuration
 path: datasets/doors  # dataset root dir
 train: train/images   # train images (relative to 'path')
 val: val/images       # val images (relative to 'path')

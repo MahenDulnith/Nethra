@@ -1,0 +1,40 @@
+# Generic REST shape. Fill endpoints once D-22 is decided (due 14 Oct).
+# retention_policy_note is REQUIRED per provider (master spec section 15).
+
+multimodal:
+  primary: streaming
+  fallback: cascade
+  endpoint: ""                  # websocket URL
+  timeout_ms: 8000
+  max_retries: 1
+  retention_policy_note: "UNVERIFIED - fill before any real-user data"
+
+stt:
+  primary: cloud_stt
+  endpoint: ""                  # POST multipart audio -> {"text": "..."}
+  timeout_ms: 6000
+  max_retries: 2
+  retention_policy_note: "UNVERIFIED"
+
+llm:
+  primary: cloud_llm
+  endpoint: ""                  # POST chat-completions shape
+  model: ""
+  timeout_ms: 8000
+  max_retries: 1
+  retention_policy_note: "UNVERIFIED"
+
+tts:
+  primary: cloud_tts
+  endpoint: ""                  # POST {"text":...} -> audio bytes
+  timeout_ms: 5000
+  max_retries: 1
+  retention_policy_note: "UNVERIFIED"
+
+vlm:
+  primary: cloud_vlm
+  endpoint: ""                  # POST image+prompt -> strict JSON
+  model: ""
+  timeout_ms: 7000
+  max_retries: 1
+  retention_policy_note: "UNVERIFIED"

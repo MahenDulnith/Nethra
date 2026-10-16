@@ -1,9 +1,9 @@
-"""Unit tests for pulsepath.haptics pattern engine."""
+"""Unit tests for Nethra HapticPatternEngine (L1 adapters.haptic.pattern_engine)."""
 
 import unittest
-from pulsepath.detection import HapticFeedbackState
-from pulsepath.guidance import GuidanceCommand
-from pulsepath.haptics import HapticPatternEngine, HapticOutput
+
+from adapters.haptic.pattern_engine import HapticOutput, HapticPatternEngine
+from contracts.haptic_command import GuidanceCommand, HapticFeedbackState
 
 
 class TestHapticPatternEngine(unittest.TestCase):

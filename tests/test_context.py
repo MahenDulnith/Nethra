@@ -1,8 +1,9 @@
 """Unit tests for ContextSceneTracker, room inference, and multi-modal location queries."""
 
 import unittest
-from pulsepath.context import ContextSceneTracker
-from pulsepath.detection import Detection
+
+from contracts.detection import Detection
+from features.context_routines.context_tracker import ContextSceneTracker
 
 
 def make_det(label: str, cx: float = 320.0, cy: float = 240.0) -> Detection:
@@ -57,7 +58,7 @@ class TestContextSceneTracker(unittest.TestCase):
         self.assertIn("computer laboratory", room_desc.lower())
 
         # Test combined query
-        spoken, hud = tracker.query_location(dets)
+        spoken, hud = tracker.query_location_details(dets)
         self.assertIn("Jayewardenepura", spoken)
         self.assertIn("computer laboratory", spoken.lower())
         self.assertIn("Computer Laboratory", hud)
@@ -72,7 +73,7 @@ class TestContextSceneTracker(unittest.TestCase):
         self.assertEqual(room_name, "Bedroom")
         self.assertIn("bed", room_desc.lower())
 
-        spoken, hud = tracker.query_location(dets)
+        spoken, hud = tracker.query_location_details(dets)
         self.assertIn("Malabe", spoken)
         self.assertIn("bed", spoken.lower())
 

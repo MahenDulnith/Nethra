@@ -1,0 +1,119 @@
+# Every spoken string. ci/phrasebook_lint.py scans _forbidden against all values.
+
+onboarding:
+  cane_first: >
+    Before we start, something important. Your cane stays your main tool
+    for the ground, steps and kerbs. I can tell you about traffic and
+    obstacles ahead, but I will miss things, and I will sometimes be wrong.
+    Keep using your cane exactly as you do now.
+
+lookaround:
+  searching: "Let me look."
+  guiding_left: "Turn slowly to your left."
+  guiding_right: "Turn slowly to your right."
+  guiding_left_again: "Keep turning left."
+  guiding_right_again: "Keep turning right."
+  no_progress: "I don't think the view is changing. Are you able to turn?"
+  found: "Found it."
+  found_with_direction: "Found it, at your {clock} o'clock."
+  not_visible: "I can't find it from here."
+  blocked: "I can't see — the camera is blocked."
+  too_dark: "I can't see — it's too dark."
+  timeout: "I'm going to stop looking now."
+  cancelled: "Stopped."
+
+vision:
+  describe_preamble: ""
+  uncertain: "I'm not sure."
+  cannot_see_TOO_DARK: "It's too dark for me to see."
+  cannot_see_BLURRED: "The picture is too blurred."
+  cannot_see_OCCLUDED: "Something is covering the camera."
+  cannot_see_OUT_OF_FRAME: "It's not in view."
+  cannot_see_NOT_PRESENT: "I don't see it."
+
+safety:
+  critical_LEFT: "{obj}, left."
+  critical_CENTRE_LEFT: "{obj}, ahead left."
+  critical_CENTRE: "{obj} ahead."
+  critical_CENTRE_RIGHT: "{obj}, ahead right."
+  critical_RIGHT: "{obj}, right."
+  advisory_LEFT: "{obj} on your left."
+  advisory_CENTRE_LEFT: "{obj} ahead, left."
+  advisory_CENTRE: "{obj} ahead."
+  advisory_CENTRE_RIGHT: "{obj} ahead, right."
+  advisory_RIGHT: "{obj} on your right."
+  social_known_person: "Someone you know is nearby."
+
+fault:
+  CAMERA_DARK: "I can't see, it's too dark."
+  CAMERA_BLOCKED: "The camera is covered."
+  CAMERA_LOST: "I've lost the camera."
+  LINK_LOST: "I've lost the wristband."
+  LOW_BATTERY: "Battery is low."
+  DETECTOR_STALLED: "I've stopped watching. Something went wrong."
+  AUDIO_FALLBACK: "Headset lost. I'm using the phone speaker."
+
+power:
+  mode_home: "Indoors. Camera off."
+  mode_street: "Outside. I'm watching for traffic."
+  mode_ask: "Looking now."
+  mode_low_battery: "Battery is low. I'll only warn you about urgent things."
+
+people:
+  consent_prompt_user: "You spoke with someone. Should I remember them?"
+  consent_request_other: >
+    Please ask them this, out loud: may I save your name and your face
+    so that I can recognise you next time? I keep it on this phone only,
+    and I can delete it whenever you ask.
+  consent_confirm_needed: "I need to hear them say yes."
+  consent_declined: "That's fine. I haven't saved anything."
+  ask_name: "What should I call them?"
+  enrol_started: "Hold still a moment."
+  enrol_done: "Saved {name}."
+  enrol_failed: "I couldn't get a clear enough look. Nothing was saved."
+  high_confidence: "{name} is at your {clock} o'clock."
+  medium_confidence: "Someone you may know is nearby."
+  forget_done: "I've forgotten {name}."
+  forget_not_found: "I don't have anyone by that name."
+
+memory:
+  remembered: "I'll remember that."
+  recall_none: "I don't have anything about that."
+  forget_done: "Forgotten."
+  purge_confirm: "That will delete everything I've remembered. Say delete everything again to confirm."
+  purge_done: "Everything is deleted."
+
+routines:
+  morning_frame: "Here's your day."
+  evening_frame: "Here's how today went."
+  reminder_readback: "I'll remind you: {text}, {when}. Is that right?"
+
+offline:
+  no_description: "I need a connection to describe what I'm seeing."
+  no_find: "I need a connection to look for that."
+  alerts_still_on: "I'm offline, but I'm still watching for traffic."
+
+demo:
+  health_ok: "All checks passed. Ready."
+  health_warn: "Ready, with warnings. Check the screen."
+  health_fail: "Not ready. Something is failing."
+
+# ---------------------------------------------------------------------------
+# Deny-list. If any phrase value contains one of these substrings, the build
+# fails. This is the cheapest safety control in the project.
+_forbidden:
+  - "safe to cross"
+  - "safe to go"
+  - "it's safe"
+  - "it is safe"
+  - "you can cross"
+  - "you can go now"
+  - "road is clear"
+  - "nothing is coming"
+  - "all clear"
+  - "as you can see"
+  - "look at"
+  - "over there"
+  - "you can walk"
+  - "path is clear"
+  - "nothing in your way"

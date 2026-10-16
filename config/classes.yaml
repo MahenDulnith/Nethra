@@ -1,0 +1,51 @@
+# The detector class list. Also the honest-limits statement:
+# drop-offs, holes, kerbs and step edges are deliberately NOT here.
+
+classes:
+  - name: car
+    detector_label: car
+    base_tier: CRITICAL
+    is_dynamic: true
+    min_confidence: 0.35
+  - name: motorcycle
+    detector_label: motorcycle
+    base_tier: CRITICAL
+    is_dynamic: true
+    min_confidence: 0.35
+  - name: three_wheeler
+    detector_label: motorcycle     # remap until the local set is fine-tuned (Phase 6)
+    base_tier: CRITICAL
+    is_dynamic: true
+    min_confidence: 0.35
+  - name: bus_truck
+    detector_label: bus
+    base_tier: CRITICAL
+    is_dynamic: true
+    min_confidence: 0.35
+  - name: bicycle
+    detector_label: bicycle
+    base_tier: ADVISORY
+    is_dynamic: true
+    min_confidence: 0.40
+  - name: person
+    detector_label: person
+    base_tier: ADVISORY
+    is_dynamic: true
+    min_confidence: 0.40
+  - name: pole_post
+    detector_label: traffic light
+    base_tier: ADVISORY
+    is_dynamic: false
+    min_confidence: 0.45
+  - name: large_static_obstacle
+    detector_label: bench
+    base_tier: ADVISORY
+    is_dynamic: false
+    min_confidence: 0.45
+
+not_detected:
+  - drop-offs
+  - holes and open drains
+  - kerbs
+  - step edges
+  - overhead obstacles below head height
