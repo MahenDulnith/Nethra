@@ -71,6 +71,8 @@ python main.py --mock
 ```
 
 ### 3. Interactive Controls
+- **`v` / `Space`** — **Push-to-Talk Voice Agent** (speak naturally: *"Find my laptop"*, *"Where is the door?"*, *"What do you see?"*, *"Where am I?"*, *"Stop"*)
+- **`d`** — Describe current scene & spatial object breakdown (*"What is in front of me?"*)
 - **`f`** — Start Guided Search for a **Door** (`SEARCHING` $\to$ `HEAD_GUIDE` $\to$ `HAND_GUIDE` $\rightleftharpoons$ `ALIGNED`)
 - **`b`** — Start Guided Search for a **Bottle**
 - **`x`** — Cancel active Guided Search and return to normal navigation

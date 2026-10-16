@@ -24,6 +24,7 @@ def render_hud(
     toast_msg: Optional[str] = None,
     model_mode_label: str = "Ensemble: COCO-80 + Doors",
     guidance: Optional[GuidanceOutput] = None,
+    voice_listening: bool = False,
 ) -> np.ndarray:
     """Renders the high-contrast Nethra assistive vision HUD overlay."""
     h, w, _ = frame.shape
@@ -48,8 +49,20 @@ def render_hud(
         cv2.LINE_AA,
     )
 
-    # Active Mode / Model Badge
-    if guidance and guidance.active:
+    # Active Mode / Voice Listening / Model Badge
+    if voice_listening:
+        cv2.rectangle(overlay, (130, 8), (395, 36), (60, 40, 255), -1)
+        cv2.putText(
+            overlay,
+            "MIC LISTENING... SPEAK NOW",
+            (140, 27),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.44,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+    elif guidance and guidance.active:
         mode_text = f"FIND: {(guidance.target_name or '').upper()} [{guidance.state.value}]"
         badge_color = (0, 140, 255) if guidance.state != GuidanceState.ALIGNED else (40, 200, 80)
         cv2.rectangle(overlay, (130, 8), (380, 36), badge_color, -1)
@@ -278,10 +291,10 @@ def render_hud(
 
     cv2.putText(
         overlay,
-        "[F] Door | [B] Bottle | [X] Cancel | [C] Cam | [W] Where? | [M] Mute | [Q] Quit",
-        (16, h - 10),
+        "[V/Space] Voice | [D] Scene | [F] Door | [B] Bottle | [X] Stop | [W] Where? | [C] Cam | [Q] Quit",
+        (14, h - 10),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.35,
+        0.33,
         (120, 120, 135),
         1,
         cv2.LINE_AA,

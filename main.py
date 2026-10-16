@@ -17,6 +17,7 @@ from typing import Optional, Union
 
 import cv2
 
+from adapters.audio.mic_listener import PushToTalkListener
 from adapters.camera.base import CameraSource, get_camera_name, open_camera
 from adapters.camera.factory import CameraFactory
 from adapters.camera.mock_camera import create_mock_frame
@@ -27,6 +28,7 @@ from contracts.haptic_command import GuidanceState, HapticFeedbackState
 from features.context_routines.context_tracker import ContextSceneTracker
 from features.lookaround.commands import FIND_KEYS, parse_intent
 from features.lookaround.guidance import GuidanceStateMachine
+from services.agent.voice_agent import VoiceAgent
 from services.arbiter.channel_policy import DispatchChannel
 from services.arbiter.rule_arbiter import RuleArbiter
 from services.safety.hand_tracker import HandTracker
@@ -119,10 +121,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
         use_clock_face=not args.relative_directions,
     )
 
-    # Initialize L4/L2/L1 Guided Search Engine
+    # Initialize L4/L2/L1 Guided Search Engine & L1/L3 Voice Agent
     guidance_sm = GuidanceStateMachine()
     hand_tracker = HandTracker()
     haptic_pattern = HapticPatternEngine()
+    mic_listener = PushToTalkListener()
+    voice_agent = VoiceAgent()
 
     initial_target = getattr(args, "target", None)
     if initial_target:
@@ -132,16 +136,17 @@ def run_pipeline(args: argparse.Namespace) -> None:
             if out.speech:
                 speech.say(out.speech)
 
-    print("\n" + "=" * 65)
+    print("\n" + "=" * 68)
     print(" Nethra Assistive Vision Prototype Active")
     print(f" - Vision Engine: {mode_label}")
     print(f" - Active Camera: {camera.name} (FOV Scale: {camera.fov_area_scale}x)")
-    print(f" - Voice Engine:  {'Muted' if not speech.enabled else 'Active (Offline TTS)'}")
+    print(f" - Voice Engine:  {'Muted' if not speech.enabled else 'Active (Offline TTS)'} | Mic STT: {mic_listener.backend}")
     print(f" - Directions:    {'Relative (Left/Right)' if args.relative_directions else 'Clock-Face (10-2 o\'clock)'}")
     print(f" - Ears-Free:     {'Advisory Haptic-Only' if not args.voice_advisory else 'All Speech Enabled'}")
-    print(" - Keys: [F] Find Door | [B] Find Bottle | [X] Cancel Guidance")
-    print("         [C] Cycle Camera | [W] Where Am I? | [M] Mute | [Q] Quit")
-    print("=" * 65 + "\n")
+    print(" - Keys: [V / Space] Talk to Voice Agent ('find door', 'what do you see', 'where am i')")
+    print("         [D] Describe Scene | [F] Find Door | [B] Find Bottle | [X] Cancel")
+    print("         [C] Cycle Camera   | [W] Where Am I? | [M] Mute      | [Q] Quit")
+    print("=" * 68 + "\n")
 
     frame_count = 0
     prev_time = time.time()
@@ -173,6 +178,29 @@ def run_pipeline(args: argparse.Namespace) -> None:
             if lens_status != LensStatus.OK and lens_status != LensStatus.BLURRED:
                 toast_banner = f"Camera Alert: Lens {lens_status.value}"
                 toast_time = now
+
+            # 1B. Poll Non-Blocking Push-to-Talk Voice Agent Result
+            transcript, mic_err = mic_listener.pop_result()
+            if transcript:
+                print(f'[VoiceAgent] Heard: "{transcript}"')
+                agent_res = voice_agent.handle_transcript(
+                    transcript=transcript,
+                    detections=detections,
+                    guidance_sm=guidance_sm,
+                    context_tracker=context_tracker,
+                    speech=speech,
+                    now=now,
+                )
+                toast_banner = agent_res.hud_toast
+                toast_time = now
+                if agent_res.location_banner:
+                    location_banner = agent_res.location_banner
+                    location_banner_time = now
+            elif mic_err:
+                print(f"[VoiceAgent] {mic_err}")
+                toast_banner = f"Mic: {mic_err}"
+                toast_time = now
+                speech.say("Sorry, I did not catch that.")
 
             # 2. Run Guided Search State Machine (if active)
             hand_pt = None
@@ -215,7 +243,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
             # 3. Run Deterministic Rule Arbiter
             winning_alert, dispatch_channel = rule_arbiter.arbitrate(candidate_alerts)
-            if winning_alert is not None and not guidance_out.active:
+            if winning_alert is not None and not guidance_out.active and not mic_listener.is_listening:
                 dir_label = (
                     winning_alert.direction_sector.value
                     if args.relative_directions
@@ -237,7 +265,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
             # 4. Context Routine Update (bed detection, morning routine)
             context_msg = context_tracker.update(detections)
-            if context_msg:
+            if context_msg and not mic_listener.is_listening:
                 speech.say(context_msg)
 
             # Telemetry printing every 30 frames
@@ -276,6 +304,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 toast_msg=toast_banner,
                 model_mode_label=mode_label,
                 guidance=guidance_out,
+                voice_listening=mic_listener.is_listening,
             )
 
             if not args.headless:
@@ -284,6 +313,20 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 if key == ord("q"):
                     print("[Pipeline] Exiting on user request.")
                     break
+                elif key in (ord("v"), ord(" ")):
+                    if not mic_listener.is_listening:
+                        speech.stop()
+                        speech.chime("found")
+                        if mic_listener.start_listening():
+                            print("[VoiceAgent] Listening for 3.2s... Speak your command now!")
+                            toast_banner = "Listening... Speak now ('find door', 'what do you see')"
+                            toast_time = time.time()
+                elif key == ord("d"):
+                    spoken_scene, hud_scene = voice_agent.summarize_scene(detections)
+                    location_banner = hud_scene
+                    location_banner_time = time.time()
+                    print(f"[Scene Description] {spoken_scene}")
+                    speech.say(spoken_scene, interrupt=True)
                 elif key == ord("w"):
                     spoken_loc, hud_loc = context_tracker.query_location_details(detections)
                     location_banner = hud_loc
