@@ -70,6 +70,11 @@ def run_pipeline(args: argparse.Namespace):
     if not use_mock:
         cap, current_cam_idx = open_camera(current_cam_idx)
         if cap is None:
+            if not args.headless:
+                print("[Fatal] Could not open hardware camera. Check camera permissions or pass --mock.")
+                audio.shutdown()
+                hand_tracker.close()
+                sys.exit(1)
             print("[Warning] No video camera opened. Falling back to synthetic mock stream.")
             use_mock = True
         else:

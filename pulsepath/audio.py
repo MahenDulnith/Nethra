@@ -25,11 +25,11 @@ class AudioFeedback:
         self.last_message: Optional[str] = None
         self.last_message_time = 0.0
 
-    def speak(self, text: str, now: Optional[float] = None, interrupt: bool = True) -> bool:
-        """Speaks text without blocking. The same phrase is not repeated within min_repeat_interval."""
+    def speak(self, text: str, now: Optional[float] = None, interrupt: bool = True, force: bool = False) -> bool:
+        """Speaks text without blocking. The same phrase is not repeated within min_repeat_interval unless force=True."""
         now = time.time() if now is None else now
         last = self._last_spoken.get(text)
-        if last is not None and now - last < self.min_repeat_interval:
+        if not force and last is not None and now - last < self.min_repeat_interval:
             return False
         self._last_spoken[text] = now
         self.last_message, self.last_message_time = text, now
