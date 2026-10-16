@@ -24,9 +24,12 @@
    - **Windows + Android**: USB ADB stream / DroidCam / IP Webcam (`--camera-url http://127.0.0.1:8080/video` or `--camera 1`).
    - **Synthetic Mock Feed**: Built-in oscillating obstacle corridor (`--mock`) for hardware-free testing and CI.
 
-4. **Contextual Scene & Wake-Up Intelligence (`L4` Features)**:
-   - Recognizes routine contexts (e.g., detecting a `bed` in view triggers a morning wake-up greeting).
-   - Interactive location & scene query (`[W]` key: *"Where am I?"*).
+4. **Guided Search & Hand-to-Object Micro-Navigation (`L4` Features + `L2` HandTracker)**:
+   - Interactive object search (`[F]` Find Door, `[B]` Find Bottle, `[X]` Cancel) with temporal confirmation, MediaPipe index-fingertip tracking, and error-scaled wristband pulse guidance (`0.8s` $\to$ `0.2s` period, `"da-DUM"` double-pulse on alignment).
+
+5. **Contextual Scene, Room Classifier & Wake-Up Intelligence (`L4` Features)**:
+   - Recognizes routine contexts (e.g., detecting a `bed` in view triggers a morning wake-up greeting) and classifies indoor rooms (`Computer Laboratory`, `Bedroom`, `Living Room`, `Kitchen Area`, `Outdoors`).
+   - Interactive location & scene query (`[W]` key: *"Where am I?"*) backed by [`config/locations.json`](file:///Users/mahendulnith/Project/Assistive_Vision_Prototype/config/locations.json).
 
 ---
 
@@ -68,8 +71,12 @@ python main.py --mock
 ```
 
 ### 3. Interactive Controls
+- **`f`** — Start Guided Search for a **Door** (`SEARCHING` $\to$ `HEAD_GUIDE` $\to$ `HAND_GUIDE` $\rightleftharpoons$ `ALIGNED`)
+- **`b`** — Start Guided Search for a **Bottle**
+- **`x`** — Cancel active Guided Search and return to normal navigation
 - **`c`** — Cycle active cameras (Phone Camera ↔ Laptop Webcam)
-- **`w`** — Trigger contextual location query (*"Where am I?"*)
+- **`w`** — Trigger multi-modal location & room query (*"Where am I?"*)
+- **`m`** — Mute / Unmute spoken TTS audio feedback
 - **`q`** — Quit cleanly
 
 ---
