@@ -320,11 +320,6 @@ class GuidanceStateMachine:
         return max(candidates, key=lambda d: d.area_ratio)  # otherwise the closest one
 
     def _distance_phrase(self, match: Detection) -> str:
-        if getattr(match, "distance_m", None) is not None:
-            d = float(match.distance_m)
-            if d < 0.7:
-                return f", {d:.1f} meters away, within arm's reach"
-            return f", {d:.1f} meters away"
         if match.label.lower() not in LARGE_OBJECTS:
             return ""
         steps = estimate_steps(match.area_ratio)

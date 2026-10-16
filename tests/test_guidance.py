@@ -1,7 +1,11 @@
-"""Unit tests for pulsepath.guidance state machine and pinhole metric distance."""
+"""Unit tests for pulsepath.guidance state machine and multi-bed disambiguation."""
 
 import unittest
-from pulsepath.detection import Detection, SpatialRoutingEngine, get_camera_vfov_deg
+from pulsepath.detection import (
+    Detection,
+    disambiguate_multi_bed_candidates,
+    merge_candidate_detections,
+)
 from pulsepath.guidance import (
     GuidanceCommand,
     GuidanceConfig,
@@ -145,54 +149,37 @@ class TestGuidanceStateMachine(unittest.TestCase):
         self.assertEqual(out_lost.state, GuidanceState.SEARCHING)
 
 
-class TestPinholeMetricDistance(unittest.TestCase):
+class TestMultiBedDisambiguation(unittest.TestCase):
 
-    def test_toggle_metric_mode_and_distance_calculation(self):
-        engine = SpatialRoutingEngine(use_pinhole_metric=False, vfov_deg=60.0)
-        # Classic mode: distance_m should be None
-        dets_classic = engine.build_detections(
-            boxes=[[220, 120, 420, 360]],
-            scores=[0.9],
-            labels=["door"],
+    def test_three_beds_where_second_and_third_misclassified_as_table_and_chair(self):
+        # Bed 1: correctly detected as 'bed'
+        # Bed 2: misclassified as 'dining table' / 'table'
+        # Bed 3: misclassified as 'chair'
+        raw_candidates = [
+            ((20, 200, 200, 420), 0.78, "bed"),
+            ((220, 210, 410, 410), 0.55, "dining table"),
+            ((430, 220, 610, 400), 0.48, "chair"),
+        ]
+        resolved = disambiguate_multi_bed_candidates(
+            strong_candidates=raw_candidates,
+            weak_bed_boxes=[(20, 200, 200, 420)],
             frame_width=640,
             frame_height=480,
+            bedroom_context_active=True,
         )
-        self.assertEqual(len(dets_classic), 1)
-        self.assertIsNone(dets_classic[0].distance_m)
+        merged = merge_candidate_detections(resolved)
+        self.assertEqual(len(merged), 3)
+        self.assertEqual([c[2] for c in merged], ["bed", "bed", "bed"])
 
-        # Toggle ON (like pressing 'O')
-        is_metric = engine.toggle_metric_mode()
-        self.assertTrue(is_metric)
-        dets_metric = engine.build_detections(
-            boxes=[[220, 120, 420, 360]],
-            scores=[0.9],
-            labels=["door"],
-            frame_width=640,
-            frame_height=480,
-        )
-        self.assertIsNotNone(dets_metric[0].distance_m)
-        # Door height = 240px out of 480px (half frame), VFOV=60 deg -> f_px = 415.7, Z = 2.05 * 415.7 / 240 = 3.55m
-        self.assertAlmostEqual(dets_metric[0].distance_m, 3.55, places=2)
-
-        # Toggle OFF again
-        is_metric_after = engine.toggle_metric_mode()
-        self.assertFalse(is_metric_after)
-
-    def test_camera_vfov_calibration_and_edge_clipping_guard(self):
-        self.assertEqual(get_camera_vfov_deg(1), 68.0)
-        self.assertEqual(get_camera_vfov_deg(0), 54.0)
-
-        engine = SpatialRoutingEngine(use_pinhole_metric=True, vfov_deg=68.0)
-        # Door clipped at both top (y1=0) and bottom (y2=480) when user stands right in front of it
-        dets_close = engine.build_detections(
-            boxes=[[100, 0, 540, 480]],
-            scores=[0.95],
-            labels=["door"],
-            frame_width=640,
-            frame_height=480,
-        )
-        self.assertLessEqual(dets_close[0].distance_m, 0.7)
-        self.assertGreaterEqual(dets_close[0].pwm_intensity, 90.0)
+    def test_bed_wins_tie_against_overlapping_table_or_chair(self):
+        # Even if 'table' has higher raw score (0.65) than 'bed' (0.45) on the same bed
+        candidates = [
+            ((100, 150, 350, 400), 0.65, "table"),
+            ((105, 155, 345, 395), 0.45, "bed"),
+        ]
+        merged = merge_candidate_detections(candidates, iou_thresh=0.45)
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0][2], "bed")
 
 
 if __name__ == "__main__":

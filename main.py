@@ -19,7 +19,7 @@ from pulsepath.audio import AudioFeedback
 from pulsepath.camera import create_mock_frame, get_camera_name, open_camera
 from pulsepath.commands import FIND_KEYS
 from pulsepath.context import ContextSceneTracker
-from pulsepath.detection import EnsembleDetector, SpatialRoutingEngine, get_camera_vfov_deg
+from pulsepath.detection import EnsembleDetector, SpatialRoutingEngine
 from pulsepath.guidance import GuidanceConfig, GuidanceStateMachine
 from pulsepath.hand_tracker import HandTracker
 from pulsepath.haptics import HapticPatternEngine
@@ -46,12 +46,7 @@ def run_pipeline(args: argparse.Namespace):
     hand_tracker = HandTracker(min_confidence=0.5)
 
     # 4. Initialize Engines
-    spatial_engine = SpatialRoutingEngine(
-        min_area_ratio=0.015,
-        max_area_ratio=0.35,
-        use_pinhole_metric=args.metric_distance,
-        vfov_deg=get_camera_vfov_deg(args.camera),
-    )
+    spatial_engine = SpatialRoutingEngine(min_area_ratio=0.015, max_area_ratio=0.35)
     guidance = GuidanceStateMachine(GuidanceConfig())
     haptic_engine = HapticPatternEngine(override_threshold=80.0)
     context_tracker = ContextSceneTracker(location=args.location)
@@ -80,18 +75,16 @@ def run_pipeline(args: argparse.Namespace):
         else:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
-            spatial_engine.set_camera_vfov(get_camera_vfov_deg(current_cam_idx))
 
     print("\n" + "=" * 68)
     print(" PulsePath AI - Assistive Vision & Guided Search Active")
     print(f" - Vision Models: {detector.mode_label}")
-    print(f" - Active Camera: {get_camera_name(current_cam_idx)} (VFOV: {spatial_engine.vfov_deg:.0f} deg)")
-    print(f" - Distance Mode: {'PINHOLE METRIC (m)' if spatial_engine.use_pinhole_metric else 'CLASSIC AREA (%)'}")
+    print(f" - Active Camera: {get_camera_name(current_cam_idx)}")
     print(f" - Hand Tracking: {hand_tracker.backend}")
     print(" Controls:")
     print("   [F] Find Door        | [B] Find Bottle    | [X] Cancel Guidance")
-    print("   [O] Toggle Dist Mode | [C] Switch Camera  | [W] Where Am I?")
-    print("   [M] Mute/Unmute      | [Q] Quit")
+    print("   [C] Switch Camera    | [W] Where Am I?    | [M] Mute/Unmute Audio")
+    print("   [Q] Quit")
     print("=" * 68 + "\n")
 
     frame_count = 0
@@ -168,12 +161,11 @@ def run_pipeline(args: argparse.Namespace):
                 g_str = f"Mode: {guidance.state.value}"
                 if guidance.active and guidance.target_name:
                     g_str += f" ({guidance.target_name})"
-                dist_tag = "METRIC" if spatial_engine.use_pinhole_metric else "AREA"
                 print(
                     f"[Telemetry] Frame {frame_count:04d} | "
                     f"Left: {haptic_out.left_pwm:4.1f}% | "
                     f"Right: {haptic_out.right_pwm:4.1f}% | "
-                    f"{h_source} {haptic_out.label} | {g_str} | Dist: {dist_tag}"
+                    f"{h_source} {haptic_out.label} | {g_str}"
                 )
 
             # Clear temporary banners
@@ -199,7 +191,6 @@ def run_pipeline(args: argparse.Namespace):
                 speech_subtitle=audio.last_message if (now - audio.last_message_time < 5.0) else None,
                 toast_msg=toast_banner,
                 location_msg=location_banner,
-                metric_mode=spatial_engine.use_pinhole_metric,
             )
 
             # 8. Interactive Keyboard & Window Handling
@@ -226,18 +217,6 @@ def run_pipeline(args: argparse.Namespace):
                     if out.speech:
                         audio.speak(out.speech, now=now)
 
-                elif key in (ord("o"), ord("d")):
-                    is_metric = spatial_engine.toggle_metric_mode()
-                    if is_metric:
-                        toast_banner = f"Distance Mode: PINHOLE METRIC (m) [ON] (VFOV {spatial_engine.vfov_deg:.0f} deg)"
-                        speech_msg = "Metric distance mode on."
-                    else:
-                        toast_banner = "Distance Mode: CLASSIC AREA (%) [OFF]"
-                        speech_msg = "Classic area distance mode."
-                    toast_time = now
-                    audio.speak(speech_msg, now=now, force=True)
-                    print(f"[Distance] {toast_banner}")
-
                 elif key == ord("w"):
                     speech_text, hud_text = context_tracker.query_location(detections)
                     location_banner = hud_text
@@ -261,8 +240,7 @@ def run_pipeline(args: argparse.Namespace):
                         current_cam_idx = actual_new
                         cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
                         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
-                        spatial_engine.set_camera_vfov(get_camera_vfov_deg(current_cam_idx))
-                        toast_banner = f"Switched: {get_camera_name(current_cam_idx)} (VFOV {spatial_engine.vfov_deg:.0f} deg)"
+                        toast_banner = f"Switched: {get_camera_name(current_cam_idx)}"
                         toast_time = time.time()
                     else:
                         print(f"[Camera Error] Could not switch to index {new_idx}.")
@@ -289,7 +267,6 @@ def parse_arguments() -> argparse.Namespace:
     default_cam = 1 if sys.platform == "darwin" else 0
     parser.add_argument("--camera", type=str, default=str(default_cam), help="Camera index (e.g. 0, 1) or IP stream URL (default: '1' on macOS, '0' on Windows)")
     parser.add_argument("--location", type=str, default="cisco_lab", help="Location profile key (e.g. cisco_lab, home) or custom address (default: cisco_lab)")
-    parser.add_argument("--metric-distance", action="store_true", help="Start with Pinhole Metric Distance Mode (m) enabled (can toggle live with [O])")
     parser.add_argument("--conf", type=float, default=0.35, help="YOLO confidence threshold (default: 0.35)")
     parser.add_argument("--width", type=int, default=640, help="Frame width (default: 640)")
     parser.add_argument("--height", type=int, default=480, help="Frame height (default: 480)")

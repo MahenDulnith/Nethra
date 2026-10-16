@@ -97,7 +97,6 @@ def render_hud(
     speech_subtitle: Optional[str] = None,
     toast_msg: Optional[str] = None,
     location_msg: Optional[str] = None,
-    metric_mode: bool = False,
 ) -> np.ndarray:
     """Renders high-contrast, modern visual HUD for PulsePath."""
     h, w = frame.shape[:2]
@@ -176,9 +175,7 @@ def render_hud(
 
         # Label tag
         tag = f"{det.label} {det.confidence:.0%}"
-        if getattr(det, "distance_m", None) is not None:
-            tag += f" | {det.distance_m:.1f}m"
-        elif det.pwm_intensity > 0:
+        if det.pwm_intensity > 0:
             tag += f" | {det.pwm_intensity:.0f}%"
         (lw, lh), _ = cv2.getTextSize(tag, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)
         tag_y = max(top_bar_h + 16, y1 - 6)
@@ -227,13 +224,12 @@ def render_hud(
     haptic_source_color = (0, 80, 255) if haptics.source == "obstacle" else (0, 220, 200)
     cv2.putText(overlay, f"HAPTIC: {haptics.label}", (70, h - 56), cv2.FONT_HERSHEY_DUPLEX, 0.48, haptic_source_color, 1, cv2.LINE_AA)
 
-    # Pulse rate / pattern state + Distance Mode indicator
-    dist_tag = "Dist: METRIC (m)" if metric_mode else "Dist: AREA (%)"
+    # Pulse rate / pattern state
     if guidance.active:
-        detail_msg = f"Mode: {guidance.state.value} | Ref: {guidance.reference or 'head'} | {dist_tag}"
+        detail_msg = f"Mode: {guidance.state.value} | Reference: {guidance.reference or 'head'} | Intensity: {guidance.magnitude:.0%}"
     else:
-        detail_msg = f"Obstacle Nav Active | {dist_tag}"
-    cv2.putText(overlay, detail_msg, (70, h - 34), cv2.FONT_HERSHEY_SIMPLEX, 0.39, (170, 170, 180), 1, cv2.LINE_AA)
+        detail_msg = "Obstacle Navigation Active — Wristbands respond to proximity"
+    cv2.putText(overlay, detail_msg, (70, h - 34), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (170, 170, 180), 1, cv2.LINE_AA)
 
     # Objects seen summary
     seen_labels = sorted({d.label for d in detections})
@@ -243,8 +239,8 @@ def render_hud(
     cv2.putText(overlay, seen_str, (w - 280, h - 56), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (160, 160, 175), 1, cv2.LINE_AA)
 
     # Keyboard shortcut legend at very bottom
-    shortcuts = "[F] Door  |  [B] Bottle  |  [O] Dist Mode  |  [X] Cancel  |  [C] Cam  |  [W] Where?  |  [Q] Exit"
-    cv2.putText(overlay, shortcuts, (14, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (120, 120, 135), 1, cv2.LINE_AA)
+    shortcuts = "[F] Find Door  |  [B] Find Bottle  |  [X] Cancel  |  [C] Switch Cam  |  [W] Where Am I?  |  [Q] Quit"
+    cv2.putText(overlay, shortcuts, (14, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (120, 120, 135), 1, cv2.LINE_AA)
 
     # 7. NOTIFICATION BANNERS (Toast & Speech subtitle)
     if toast_msg:
