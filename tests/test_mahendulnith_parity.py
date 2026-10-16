@@ -231,6 +231,37 @@ class TestMahenDulnithParityAndReadiness(unittest.TestCase):
         )
         self.assertEqual(res.returncode, 0, f"Dependency check failed: {res.stdout}\n{res.stderr}")
 
+    def test_8_guided_search_and_haptic_pattern_integration(self) -> None:
+        """Verifies L4 GuidanceStateMachine + L1 HapticPatternEngine + L5 HUD integration."""
+        from adapters.haptic.pattern_engine import HapticPatternEngine
+        from features.lookaround.guidance import GuidanceStateMachine
+
+        sm = GuidanceStateMachine()
+        haptic_engine = HapticPatternEngine()
+        out_start = sm.start("door", now=1.0)
+        self.assertTrue(out_start.active)
+
+        frame = root_main.create_mock_frame(640, 480, frame_count=10)
+        haptics = root_main.HapticFeedbackState(left_pwm=0.0, right_pwm=0.0, active_threat=None)
+        h_out = haptic_engine.compute(
+            command=out_start.command,
+            magnitude=out_start.magnitude,
+            now=1.02,
+            obstacle=haptics,
+            guidance_active=out_start.active,
+        )
+        self.assertEqual(h_out.source, "guidance")
+        rendered = root_main.render_hud(
+            frame=frame,
+            detections=[],
+            haptics=haptics,
+            context_msg=None,
+            fps=30.0,
+            camera_idx="Mock",
+            guidance=out_start,
+        )
+        self.assertEqual(rendered.shape, (480, 640, 3))
+
 
 if __name__ == "__main__":
     unittest.main()
