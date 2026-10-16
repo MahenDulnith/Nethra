@@ -1,7 +1,7 @@
-"""Unit tests for pulsepath.guidance state machine."""
+"""Unit tests for pulsepath.guidance state machine and pinhole metric distance."""
 
 import unittest
-from pulsepath.detection import Detection
+from pulsepath.detection import Detection, SpatialRoutingEngine, get_camera_vfov_deg
 from pulsepath.guidance import (
     GuidanceCommand,
     GuidanceConfig,
@@ -143,6 +143,56 @@ class TestGuidanceStateMachine(unittest.TestCase):
         out_lost = self.sm.update([], hand_point=None, frame_width=self.fw, frame_height=self.fh, now=0.8)
         self.assertEqual(out_lost.command, GuidanceCommand.LOST)
         self.assertEqual(out_lost.state, GuidanceState.SEARCHING)
+
+
+class TestPinholeMetricDistance(unittest.TestCase):
+
+    def test_toggle_metric_mode_and_distance_calculation(self):
+        engine = SpatialRoutingEngine(use_pinhole_metric=False, vfov_deg=60.0)
+        # Classic mode: distance_m should be None
+        dets_classic = engine.build_detections(
+            boxes=[[220, 120, 420, 360]],
+            scores=[0.9],
+            labels=["door"],
+            frame_width=640,
+            frame_height=480,
+        )
+        self.assertEqual(len(dets_classic), 1)
+        self.assertIsNone(dets_classic[0].distance_m)
+
+        # Toggle ON (like pressing 'O')
+        is_metric = engine.toggle_metric_mode()
+        self.assertTrue(is_metric)
+        dets_metric = engine.build_detections(
+            boxes=[[220, 120, 420, 360]],
+            scores=[0.9],
+            labels=["door"],
+            frame_width=640,
+            frame_height=480,
+        )
+        self.assertIsNotNone(dets_metric[0].distance_m)
+        # Door height = 240px out of 480px (half frame), VFOV=60 deg -> f_px = 415.7, Z = 2.05 * 415.7 / 240 = 3.55m
+        self.assertAlmostEqual(dets_metric[0].distance_m, 3.55, places=2)
+
+        # Toggle OFF again
+        is_metric_after = engine.toggle_metric_mode()
+        self.assertFalse(is_metric_after)
+
+    def test_camera_vfov_calibration_and_edge_clipping_guard(self):
+        self.assertEqual(get_camera_vfov_deg(1), 68.0)
+        self.assertEqual(get_camera_vfov_deg(0), 54.0)
+
+        engine = SpatialRoutingEngine(use_pinhole_metric=True, vfov_deg=68.0)
+        # Door clipped at both top (y1=0) and bottom (y2=480) when user stands right in front of it
+        dets_close = engine.build_detections(
+            boxes=[[100, 0, 540, 480]],
+            scores=[0.95],
+            labels=["door"],
+            frame_width=640,
+            frame_height=480,
+        )
+        self.assertLessEqual(dets_close[0].distance_m, 0.7)
+        self.assertGreaterEqual(dets_close[0].pwm_intensity, 90.0)
 
 
 if __name__ == "__main__":
