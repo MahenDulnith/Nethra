@@ -300,8 +300,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         speech.say(out_cancel.speech)
                         toast_banner = out_cancel.speech
                         toast_time = time.time()
-                elif 0 <= key < 256 and chr(key) in FIND_KEYS:
-                    target = FIND_KEYS[chr(key)]
+                elif key in FIND_KEYS:
+                    target = FIND_KEYS[key]
                     out_start = guidance_sm.start(target, now=time.time())
                     if out_start.speech:
                         speech.say(out_start.speech)
