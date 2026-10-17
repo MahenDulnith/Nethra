@@ -293,9 +293,38 @@ def run_pipeline(args: argparse.Namespace) -> None:
             if dt > 0:
                 current_fps = (current_fps * 0.9) + ((1.0 / dt) * 0.1)
 
+            # High-DPI Retina display: upscale frame 2x for live GUI window so typography is razor-sharp
+            display_frame = frame
+            display_detections = detections
+            display_guidance = guidance_out
+
+            if not args.headless and w <= 640:
+                display_frame = cv2.resize(frame, (w * 2, h * 2), interpolation=cv2.INTER_LINEAR)
+                display_detections = [
+                    Detection(
+                        label=d.label,
+                        confidence=d.confidence,
+                        box=(d.box[0] * 2, d.box[1] * 2, d.box[2] * 2, d.box[3] * 2),
+                        center_x=d.center_x * 2.0,
+                        center_y=d.center_y * 2.0,
+                        width=d.width * 2.0,
+                        height=d.height * 2.0,
+                        area_ratio=d.area_ratio,
+                        zone=d.zone,
+                        pwm_intensity=d.pwm_intensity,
+                    )
+                    for d in detections
+                ]
+                if guidance_out and guidance_out.active:
+                    tp = (guidance_out.target_point[0] * 2.0, guidance_out.target_point[1] * 2.0) if guidance_out.target_point else None
+                    hp = (guidance_out.hand_point[0] * 2.0, guidance_out.hand_point[1] * 2.0) if guidance_out.hand_point else None
+                    tb = (guidance_out.target_box[0] * 2, guidance_out.target_box[1] * 2, guidance_out.target_box[2] * 2, guidance_out.target_box[3] * 2) if guidance_out.target_box else None
+                    from dataclasses import replace
+                    display_guidance = replace(guidance_out, target_point=tp, hand_point=hp, target_box=tb)
+
             annotated = render_hud(
-                frame=frame,
-                detections=detections,
+                frame=display_frame,
+                detections=display_detections,
                 haptics=haptic_state,
                 context_msg=context_msg,
                 fps=current_fps,
@@ -303,7 +332,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 location_msg=location_banner,
                 toast_msg=toast_banner,
                 model_mode_label=mode_label,
-                guidance=guidance_out,
+                guidance=display_guidance,
                 voice_listening=mic_listener.is_listening,
             )
 
