@@ -4,6 +4,8 @@
 
 **Nethra** delivers ears-free, low-latency obstacle awareness and conversational scene understanding using Edge AI. Instead of overwhelming the user's ears with continuous spoken audio announcements, Nethra translates spatial obstacle geometry directly into **dual-wristband haptic vibrations (Left & Right PWM / BLE signals)** while reserving spoken announcements for high-priority safety alerts and on-demand scene queries.
 
+> 📄 **Full project overview (problem, architecture, status, roadmap, evaluation, limitations):** [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md)
+
 ---
 
 ## Key Features
