@@ -5,7 +5,7 @@
 > **Authors & Roles:**  
 > - **Member 1 (Current Project Lead / Mac M4):** Model Training, Selection, Quantization, Edge Object Detection & Core Vision  
 > - **Member 2 (Co-Developer / Windows):** Cross-Platform Architecture, Asynchronous Concurrency, Tracking, Safety Arbiter & Cloud/Geo Services  
-> - **Member 3 (Hardware & Firmware Lead / Embedded):** Raspberry Pi 5 + Hailo-8L NPU, ESP32-C3 Dual BLE Wristbands & Physical Sensors  
+> - **Member 3 (Hardware & Firmware Lead / Embedded):** Dual ESP32-C3 Wireless Haptic Wristbands (with Li-Po Batteries & Charging Controllers), Wearable Head/Face Smartphone Mount & Mac Wireless Integration  
 > **Repository:** `https://github.com/MahenDulnith/Nethra.git`
 
 ---
@@ -143,12 +143,12 @@ To achieve maximum engineering throughput without hardware bottlenecks, the proj
 |  MEMBER 1 (Mac / Apple Silicon M4)        MEMBER 2 (Windows / Concurrency)     MEMBER 3 (Embedded / HW)
 |  - Lead Architect & Vision Lead           - Systems, Safety & Simulation Lead  - Hardware & Firmware Lead
 |  -----------------------------------      ---------------------------------    --------------------------
-|  • Model Selection & Architecture         • L0-L5 Architecture & Camera HAL    • Raspberry Pi 5 System OS
-|  • Training & Fine-Tuning Pipeline        • LatestFrame Threaded Grabber       • Hailo-8L NPU (.hef) Int.
-|  • Apple Silicon MPS Acceleration         • Frame Hygiene & RuleArbiter        • Dual ESP32-C3 Wristbands
-|  • Multi-Bed Disambiguation & NMS         • MultiObjectTracker & TTC Growth    • LRA Actuators & Drivers
-|  • Hand Tracking & Steering Math          • Clock-Face Speech & Barge-In       • Downward ToF Sensor Fusion
-|  • Model Quantization (ONNX/CoreML)       • Honest Latency Probe & Benchmarks  • Smart Glasses Frame Build
+|  • Model Selection & Architecture         • L0-L5 Architecture & Camera HAL    • Dual ESP32-C3 Wristbands
+|  • Training & Fine-Tuning Pipeline        • LatestFrame Threaded Grabber       • Li-Po Battery & Charge Ctrl
+|  • Apple Silicon MPS Acceleration         • Frame Hygiene & RuleArbiter        • Haptic Actuators & Drivers
+|  • Multi-Bed Disambiguation & NMS         • MultiObjectTracker & TTC Growth    • Head/Face Phone Mount Build
+|  • Hand Tracking & Steering Math          • Clock-Face Speech & Barge-In       • Mac <-> 2x ESP32 Wireless
+|  • Push-to-Talk Voice Agent               • Honest Latency Probe & Benchmarks  • 200ms Heartbeat Watchdog
 |  • Final Evaluation & Metrics             • Offline OpenStreetMap Engine       • Glass-to-Wrist Latency Rig
 |  • Panel Demo Presentation Lead           • VLM Runtime Safety Guards          • Battery & Thermal Mgt.
 +---------------------------------------------------------------------------------------------------+
@@ -157,9 +157,9 @@ To achieve maximum engineering throughput without hardware bottlenecks, the proj
 ### Detailed Division of Work:
 
 #### Member 1 (Mac — Apple Silicon M4):
-1. **Model Selection & Architecture:** Benchmark YOLO11 Nano vs. YOLO11-seg for polygon segmentation on ground voids (`open_drain`, `stairs_down`).
-2. **Model Training & Fine-Tuning:** Maintain `train.py` using M4 GPU Metal Performance Shaders (`device="mps"`). Fine-tune models on Sri Lankan hazard datasets (HomeObjects-3K, three-wheelers, custom doors, curbs).
-3. **Model Quantization & Export:** Export verified `.pt` weights into **ONNX FP16/INT8**, **CoreML**, and prepare clean ONNX graphs for Member 3's Hailo compilation.
+1. **Model Selection & Architecture:** Benchmark YOLO11 Nano + custom fine-tuned indoor navigation models (`nethra_doors_yolo11n.pt`).
+2. **Model Training & Fine-Tuning:** Maintain `train.py` using M4 GPU Metal Performance Shaders (`device="mps"`). Fine-tune models on indoor & Sri Lankan hazard datasets (HomeObjects-3K, custom doors, obstacles).
+3. **Voice Agent & High-DPI HUD:** Maintain the Push-to-Talk Voice Agent (`services/agent/voice_agent.py`), 80-class natural-language intent parser, and Retina 2x TrueType HUD (`shell/hud/opencv_hud.py`).
 4. **Hand Tracking Engine:** Maintain and optimize MediaPipe Tasks Hand Landmarker for tactile guidance.
 5. **Demonstration & Cisco Lab Showcase:** Lead the live evaluation demo at the University of Sri Jayewardenepura Cisco Networking Lab.
 
@@ -171,11 +171,11 @@ To achieve maximum engineering throughput without hardware bottlenecks, the proj
 5. **Geo-Spatial & Cloud VLM Layer:** Implement offline OpenStreetMap hazard caching in SQLite and build the asynchronous Gemini Flash client with `vlm_runtime_guard`.
 
 #### Member 3 (Embedded Systems & Hardware Lead):
-1. **Pocket Compute Unit (Raspberry Pi 5 + Hailo-8L):** Set up Ubuntu Core/Yocto, configure PCIe Gen 3 for the Hailo-8L AI HAT+ (13/26 TOPS), and compile `.onnx` models into `.hef` format using the Hailo Dataflow Compiler.
-2. **Dual BLE Haptic Wristbands:** Design and flash ESP32-C3 firmware to drive Linear Resonant Actuators (LRA) via TI DRV2605L haptic drivers over low-latency BLE 5.3 / ESP-NOW.
-3. **Watchdog Heartbeat:** Implement the 200 ms bidirectional BLE heartbeat and fail-safe disconnect alarm.
-4. **Sensor Fusion:** Integrate downward-facing I2C Time-of-Flight sensor (VL53L5CX) for ground void detection and the Bosch BNO085 6-DoF IMU for head tilt compensation.
-5. **Hardware Latency Verification:** Build the physical glass-to-wrist testing harness (optical LED flash $\to$ accelerometer probe on wristband) to measure true physical end-to-end latency.
+1. **Dual Wireless Haptic Wristbands (2× ESP32-C3):** Assemble left and right wristbands using two **ESP32-C3** microcontrollers, **3.7V rechargeable Li-Po batteries**, **TP4056 USB-C charging controller modules**, and haptic vibration actuators/drivers.
+2. **Wearable Smart Glasses / Face Phone Holder:** Fabricate the head/face-mounted smartphone holder so the user can wear the phone comfortably at eye level and stream live first-person camera video to the Mac.
+3. **Mac-to-Dual-ESP32 Wireless Integration:** Connect both ESP32-C3 wristbands wirelessly (BLE / Wi-Fi) to the host Mac so left and right PWM and pattern commands actuate both wristbands in real time.
+4. **Watchdog Heartbeat & Safety Cap:** Implement the 200 ms wireless heartbeat, battery ADC monitoring, and 85% firmware intensity comfort cap in `firmware/wristband-esp32/wristband-esp32.ino`.
+5. **Hardware Latency Verification:** Verify end-to-end camera-to-Mac-to-wristband actuation latency and battery runtime.
 
 ---
 
@@ -189,46 +189,43 @@ timeline
                          : MediaPipe Hand Steering
                          : Pulsing Wristband Visual HUD
                          : Cross-Platform Windows & IP Cam
-    section Phase 2 (Weeks 1-4)
-        Architecture & Safety : L0-L5 Modular Architecture
-                              : ThreadedFrameGrabber Zero-Lag Buffer
-                              : MultiObjectTracker & TTC GrowthEstimator
-                              : Deterministic RuleArbiter & Barge-In
+    section Phase 2 (Completed)
+        Architecture & Voice : L0-L5 Modular Architecture
+                             : MultiObjectTracker & TTC GrowthEstimator
+                             : Deterministic RuleArbiter & Barge-In
+                             : Push-to-Talk Voice Agent & Retina HUD
     section Phase 3 (Weeks 5-8)
-        Hardware & Firmware : RPi 5 + Hailo-8L AI Kit Setup
-                            : ESP32-C3 Dual BLE Wristbands
-                            : 200ms Heartbeat Watchdog
-                            : Downward ToF Drop Sensor
+        Wearable Hardware : 2x ESP32-C3 Wireless Wristbands
+                          : Li-Po Batteries & Charging Controllers
+                          : Wearable Head/Face Phone Holder
+                          : Mac <-> Dual ESP32 Wireless Link
     section Phase 4 (Weeks 9-12)
-        Geo-Spatial & Intelligence : Offline OSM Sri Lanka Geocache
-                                   : Room Classifier (USJ Cisco Lab)
-                                   : Multilingual Sinhala/Tamil Audio
-                                   : On-Device Whisper Voice STT
+        Geo-Spatial & Intelligence : Room Classifier (USJ Cisco Lab)
+                                   : Wake-Up & Location Routines
+                                   : Multilingual Audio Prompts
     section Phase 5 (Months 4-6)
-        Field Trials & Production : Supervised Indoor VIP Trials
-                                  : Outdoor White-Cane Route Tests
-                                  : Industrial Smart Glasses Frame
+        Field Trials & Evaluation : Supervised Indoor VIP Trials
+                                  : End-to-End Latency & Accuracy Benchmarks
 ```
 
 ---
 
-### Phase 2: Concurrency, Tracking & Deterministic Safety Arbiter (Weeks 1–4)
-* **Lead:** Member 2 (Windows) | **Support:** Member 1 (Mac)
+### Phase 2: Concurrency, Tracking, Voice Agent & Deterministic Safety Arbiter (Weeks 1–4)
+* **Lead:** Member 2 (Windows) & Member 1 (Mac)
 * **Deliverables:**
   1. Threaded pipeline: `ThreadedFrameGrabber` drop-tail slot preventing frame queue lag.
   2. L2 Frame Hygiene (`blur_scorer`, `luminance_checker`, `occlusion_heuristic`).
   3. `MultiObjectTracker` with class stability filtering and `GrowthEstimator` TTC urgency escalation.
-  4. Deterministic `RuleArbiter` and `SpeechDispatcher` with hard barge-in and forbidden-phrase blocking.
-* **Exit Gate:** Sustained 30 FPS YOLO ensemble; 0 architectural violations in `ci/dependency_graph_check.py`; all 58 unit tests passing.
+  4. Deterministic `RuleArbiter`, `SpeechDispatcher` with forbidden-phrase blocking, and Push-to-Talk `VoiceAgent`.
+* **Exit Gate:** Sustained 30 FPS YOLO ensemble; 0 architectural violations in `ci/dependency_graph_check.py`; all 63 unit tests passing.
 
-### Phase 3: Wearable Hardware & BLE Haptic Wristbands (Weeks 5–8)
-* **Lead:** Member 3 (Hardware) | **Support:** Member 1 (Model Export) & Member 2 (BLE Client)
+### Phase 3: Dual ESP32-C3 Haptic Wristbands & Wearable Face Phone Mount (Weeks 5–8)
+* **Lead:** Member 3 (Hardware) | **Support:** Member 1 (Mac Integration) & Member 2 (Wireless Client)
 * **Deliverables:**
-  1. Dual ESP32-C3 wristbands with LRA coin motors and TI DRV2605L drivers.
-  2. 200 ms bidirectional BLE heartbeat and "I Cannot See" fail-safe alarm.
-  3. Raspberry Pi 5 + Hailo-8L AI HAT+ environment running compiled `.hef` models.
-  4. Physical glass-to-wrist LED-accelerometer latency measurement rig.
-* **Exit Gate:** 60-minute continuous soak test without BLE disconnect; true physical latency $\le 30\text{ ms}$.
+  1. Two self-contained wireless wristbands built with **2× ESP32-C3**, **3.7V Li-Po batteries**, **TP4056 USB-C charging controllers**, and vibration motors/drivers.
+  2. Custom **wearable head/face smartphone holder (glasses mount)** streaming live first-person camera video to the Mac.
+  3. Wireless Mac-to-dual-ESP32-C3 communication driving left and right wrist vibrations in real time with a 200 ms watchdog heartbeat.
+* **Exit Gate:** 60-minute continuous wireless soak test without disconnect; responsive left/right tactile actuation from live phone camera feed.
 
 ### Phase 4: Geo-Spatial Intelligence & Room Classifier (Weeks 9–12)
 * **Lead:** Member 1 (Mac / Room Vision) & Member 2 (Geo / Cloud)

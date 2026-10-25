@@ -174,28 +174,35 @@ def render_hud(
     f_shortcut_bold = _get_font(int(11 * scale), bold=True)
     f_toast = _get_font(int(13 * scale), bold=True)
 
-    # 1. TOP STATUS BAR BACKGROUND
+    # 1. TOP STATUS BAR & ZONE SUB-HEADER BACKGROUNDS
     top_bar_h = int(44 * scale)
-    cv2.rectangle(overlay, (0, 0), (w, top_bar_h), (18, 18, 22), -1)
-    cv2.line(overlay, (0, top_bar_h), (w, top_bar_h), (38, 40, 50), 1)
+    zone_bar_h = int(24 * scale)
+    header_bottom = top_bar_h + zone_bar_h
 
-    # Mode Badge shape
+    cv2.rectangle(overlay, (0, 0), (w, top_bar_h), (22, 18, 18), -1)
+    cv2.rectangle(overlay, (0, top_bar_h), (w, header_bottom), (30, 25, 22), -1)
+    cv2.line(overlay, (0, top_bar_h), (w, top_bar_h), (50, 42, 38), 1)
+    cv2.line(overlay, (0, header_bottom), (w, header_bottom), (55, 48, 42), 1)
+    cv2.line(overlay, (one_third, top_bar_h), (one_third, header_bottom), (55, 48, 42), 1)
+    cv2.line(overlay, (two_thirds, top_bar_h), (two_thirds, header_bottom), (55, 48, 42), 1)
+
+    # Mode Badge shape (BGR colors)
     badge_x = int(125 * scale)
     badge_y = int(8 * scale)
     badge_h = int(28 * scale)
 
     if voice_listening:
         badge_text = "MIC LISTENING... SPEAK NOW"
-        badge_bg = (60, 40, 255)  # Vivid purple-red
+        badge_bg = (220, 40, 90)  # Vivid magenta-purple in BGR
         badge_fg = (255, 255, 255)
     elif guidance and guidance.active:
         badge_text = f"FIND: {(guidance.target_name or '').upper()} [{guidance.state.value}]"
-        badge_bg = (0, 140, 255) if guidance.state != GuidanceState.ALIGNED else (40, 200, 80)
+        badge_bg = (255, 140, 0) if guidance.state != GuidanceState.ALIGNED else (80, 200, 40)
         badge_fg = (255, 255, 255) if guidance.state != GuidanceState.ALIGNED else (0, 0, 0)
     else:
         badge_text = f"[{model_mode_label}]"
-        badge_bg = (35, 38, 48)
-        badge_fg = (200, 220, 255)
+        badge_bg = (52, 40, 34)
+        badge_fg = (200, 225, 255)
 
     badge_w = int(f_badge.getlength(badge_text)) + int(18 * scale)
     _draw_rounded_rect(
@@ -207,21 +214,36 @@ def render_hud(
         thickness=-1,
     )
 
+    # Compute active banner list & vertical span so detection label pills never collide with banners
+    banner_items: List[Tuple[str, Tuple[int, int, int], bool]] = []
+    if toast_msg:
+        banner_items.append((toast_msg, (20, 120, 220), False))   # Warm amber-blue in BGR
+    if context_msg:
+        banner_items.append((context_msg, (35, 140, 40), False))  # Forest green in BGR
+    if location_msg:
+        banner_items.append((location_msg, (150, 70, 15), True))  # Deep royal blue in BGR
+
+    banner_h = int(30 * scale)
+    banner_gap = int(6 * scale)
+    active_banners_bottom = header_bottom + (
+        len(banner_items) * (banner_h + banner_gap) if banner_items else 0
+    )
+
     # 2. ZONE DIVIDERS
     hud_bar_h = int(96 * scale)
     _draw_dashed_line(
         overlay,
-        (one_third, top_bar_h + 4),
+        (one_third, header_bottom + 4),
         (one_third, h - hud_bar_h - 4),
-        (65, 65, 75),
+        (75, 68, 65),
         thickness=1,
         gap=int(8 * scale),
     )
     _draw_dashed_line(
         overlay,
-        (two_thirds, top_bar_h + 4),
+        (two_thirds, header_bottom + 4),
         (two_thirds, h - hud_bar_h - 4),
-        (65, 65, 75),
+        (75, 68, 65),
         thickness=1,
         gap=int(8 * scale),
     )
@@ -238,16 +260,16 @@ def render_hud(
             and det.label.lower() == guidance.target_name.lower()
         )
         if is_target:
-            box_color = (255, 220, 0)     # Bright Cyan Target Highlight
+            box_color = (255, 220, 0)     # Bright Cyan Target Highlight (BGR)
             th = int(3 * scale)
         elif det.pwm_intensity > 60:
-            box_color = (0, 50, 255)      # Urgent Red
+            box_color = (0, 50, 255)      # Urgent Red (BGR)
             th = int(2 * scale)
         elif det.pwm_intensity > 25:
-            box_color = (0, 165, 255)     # Amber Orange
+            box_color = (0, 165, 255)     # Amber Orange (BGR)
             th = int(2 * scale)
         else:
-            box_color = (50, 220, 100)    # Gentle Green
+            box_color = (50, 220, 100)    # Gentle Green (BGR)
             th = int(2 * scale)
 
         cv2.rectangle(overlay, (x1, y1), (x2, y2), box_color, th, cv2.LINE_AA)
@@ -255,12 +277,14 @@ def render_hud(
         tag_text = f" {det.label} {det.confidence:.0%} | {det.pwm_intensity:.0f}% PWM "
         tag_w = int(f_label.getlength(tag_text)) + int(8 * scale)
         tag_h = int(20 * scale)
-        
-        # Position pill above box if space permits; else tuck inside top of box
-        if y1 - tag_h >= top_bar_h + 4:
+
+        # Position pill above box if clear of header & active banners; else place below banners or inside box
+        if y1 - tag_h >= active_banners_bottom + 4:
             pill_top = y1 - tag_h - int(2 * scale)
         else:
-            pill_top = y1 + int(2 * scale)
+            pill_top = max(y1 + int(2 * scale), active_banners_bottom + int(4 * scale))
+            if pill_top + tag_h > h - hud_bar_h - 4:
+                pill_top = max(header_bottom + 4, y2 - tag_h - int(2 * scale))
 
         _draw_rounded_rect(
             overlay,
@@ -369,64 +393,74 @@ def render_hud(
             thickness=-1,
         )
 
-    # 5. TOAST & NOTIFICATION BANNERS (Shapes)
-    banner_w = int(w * 0.75)
+    # 5. TOAST & NOTIFICATION BANNERS (Shapes drawn below header_bottom)
+    banner_w = int(w * 0.76)
     banner_x = (w - banner_w) // 2
+    banner_layouts: List[Tuple[int, int, int, str]] = []
 
-    if toast_msg:
-        b_y = int(50 * scale)
-        b_h = int(32 * scale)
-        _draw_rounded_rect(overlay, (banner_x, b_y), (banner_x + banner_w, b_y + b_h), (20, 120, 220), radius=int(6 * scale), thickness=-1)
-
-    if context_msg:
-        b_y = int(88 * scale)
-        b_h = int(32 * scale)
-        _draw_rounded_rect(overlay, (banner_x, b_y), (banner_x + banner_w, b_y + b_h), (30, 130, 40), radius=int(6 * scale), thickness=-1)
-
-    if location_msg:
-        b_y = int(126 * scale)
-        b_h = int(32 * scale)
-        _draw_rounded_rect(overlay, (int(20 * scale), b_y), (w - int(20 * scale), b_y + b_h), (140, 60, 0), radius=int(6 * scale), thickness=-1)
+    cur_by = header_bottom + banner_gap
+    for b_text, b_color_bgr, is_wide in banner_items:
+        bx1 = int(20 * scale) if is_wide else banner_x
+        bx2 = (w - int(20 * scale)) if is_wide else (banner_x + banner_w)
+        _draw_rounded_rect(
+            overlay,
+            (bx1, cur_by),
+            (bx2, cur_by + banner_h),
+            b_color_bgr,
+            radius=int(6 * scale),
+            thickness=-1,
+        )
+        _draw_rounded_rect(
+            overlay,
+            (bx1, cur_by),
+            (bx2, cur_by + banner_h),
+            (220, 220, 230),
+            radius=int(6 * scale),
+            thickness=1,
+        )
+        banner_layouts.append((bx1, bx2, cur_by, b_text))
+        cur_by += banner_h + banner_gap
 
     # =========================================================================
-    # 6. TRUETYPE SUB-PIXEL TEXT RENDERING (Crisp Anti-Aliased Typography)
+    # 6. TRUETYPE SUB-PIXEL TEXT RENDERING (Crisp Anti-Aliased Typography in RGB)
     # =========================================================================
     pil_img = Image.fromarray(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(pil_img)
 
     # Top Bar Text
-    draw.text((int(14 * scale), int(12 * scale)), "Nethra AI", font=f_title, fill=(0, 230, 255))
+    draw.text((int(14 * scale), int(11 * scale)), "Nethra AI", font=f_title, fill=(0, 230, 255))
     draw.text((badge_x + int(9 * scale), badge_y + int(6 * scale)), badge_text, font=f_badge, fill=badge_fg)
 
     cam_str = f"Cam: #{camera_idx}" if isinstance(camera_idx, int) else f"Cam: {str(camera_idx)[:16]}"
-    cam_color = (0, 200, 100) if (camera_idx == 1 or isinstance(camera_idx, str)) else (180, 180, 180)
+    cam_color = (50, 225, 120) if (camera_idx == 1 or isinstance(camera_idx, str)) else (185, 190, 200)
     draw.text((w - int(195 * scale), int(13 * scale)), cam_str, font=f_cam, fill=cam_color)
 
-    fps_color = (0, 255, 120) if fps >= 20 else ((0, 200, 255) if fps >= 10 else (0, 100, 255))
+    fps_color = (50, 240, 120) if fps >= 20 else ((255, 200, 0) if fps >= 10 else (255, 80, 60))
     draw.text((w - int(78 * scale), int(13 * scale)), f"{fps:4.1f} FPS", font=f_fps, fill=fps_color)
 
-    # Zone Labels
+    # Zone Sub-Header Labels (Dedicated non-overlapping strip)
     left_active = haptics.left_pwm > 0 and haptics.left_pwm != haptics.right_pwm
     center_active = haptics.left_pwm > 0 and haptics.left_pwm == haptics.right_pwm
     right_active = haptics.right_pwm > 0 and haptics.left_pwm != haptics.right_pwm
+    zone_text_y = top_bar_h + int(5 * scale)
 
     draw.text(
-        (int(18 * scale), int(52 * scale)),
+        (int(18 * scale), zone_text_y),
         "< LEFT ZONE",
         font=f_label,
-        fill=(0, 180, 255) if left_active else (140, 140, 150),
+        fill=(255, 195, 0) if left_active else (155, 160, 175),
     )
     draw.text(
-        (one_third + int(24 * scale), int(52 * scale)),
+        (one_third + int(24 * scale), zone_text_y),
         "^ CENTER (AHEAD)",
         font=f_label,
-        fill=(0, 100, 255) if center_active else (140, 140, 150),
+        fill=(255, 95, 50) if center_active else (155, 160, 175),
     )
     draw.text(
-        (two_thirds + int(24 * scale), int(52 * scale)),
+        (two_thirds + int(24 * scale), zone_text_y),
         "RIGHT ZONE >",
         font=f_label,
-        fill=(0, 180, 255) if right_active else (140, 140, 150),
+        fill=(255, 195, 0) if right_active else (155, 160, 175),
     )
 
     # Detection Bounding Box Tags
@@ -443,19 +477,19 @@ def render_hud(
         (left_x, left_y_text),
         f"[LEFT WRIST]  {haptics.left_pwm:4.1f}% PWM",
         font=f_meter_head,
-        fill=(0, 220, 255) if haptics.left_pwm > 0 else (190, 195, 205),
+        fill=(0, 225, 255) if haptics.left_pwm > 0 else (190, 195, 205),
     )
     draw.text(
         (right_x, left_y_text),
         f"[RIGHT WRIST]  {haptics.right_pwm:4.1f}% PWM",
         font=f_meter_head,
-        fill=(0, 220, 255) if haptics.right_pwm > 0 else (190, 195, 205),
+        fill=(0, 225, 255) if haptics.right_pwm > 0 else (190, 195, 205),
     )
 
-    # Bottom Center Status & Telemetry
+    # Bottom Center Status & Telemetry (RGB colors)
     center_x = int(w * 0.33)
     threat_text = haptics.active_threat or "Path Clear"
-    threat_color = (0, 80, 255) if haptics.active_threat else (50, 220, 100)
+    threat_color = (255, 90, 45) if haptics.active_threat else (60, 230, 110)
     draw.text((center_x, left_y_text), threat_text, font=f_status, fill=threat_color)
 
     labels_summary = ", ".join(list({d.label for d in detections})) if detections else "None in view"
@@ -488,22 +522,11 @@ def render_hud(
         draw.text((cur_x + kw + 2, shortcut_y), f" {act_tag}  |  ", font=f_shortcut, fill=(135, 140, 155))
         cur_x += kw + int(draw.textlength(f" {act_tag}  |  ", font=f_shortcut))
 
-    # Banner Texts
-    if toast_msg:
-        b_y = int(50 * scale)
-        tw = int(draw.textlength(toast_msg, font=f_toast))
-        tx = max(banner_x + int(12 * scale), (w - tw) // 2)
-        draw.text((tx, b_y + int(7 * scale)), toast_msg, font=f_toast, fill=(255, 255, 255))
-
-    if context_msg:
-        b_y = int(88 * scale)
-        tw = int(draw.textlength(context_msg, font=f_toast))
-        tx = max(banner_x + int(12 * scale), (w - tw) // 2)
-        draw.text((tx, b_y + int(7 * scale)), context_msg, font=f_toast, fill=(255, 255, 255))
-
-    if location_msg:
-        b_y = int(126 * scale)
-        draw.text((int(32 * scale), b_y + int(7 * scale)), location_msg, font=f_toast, fill=(255, 255, 255))
+    # Banner Texts (centered inside each stacked banner)
+    for bx1, bx2, by, b_text in banner_layouts:
+        tw = int(draw.textlength(b_text, font=f_toast))
+        tx = max(bx1 + int(12 * scale), (bx1 + bx2 - tw) // 2)
+        draw.text((tx, by + int(6 * scale)), b_text, font=f_toast, fill=(255, 255, 255))
 
     # Convert back to BGR for OpenCV display
     result_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)

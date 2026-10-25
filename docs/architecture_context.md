@@ -7,18 +7,11 @@ Build an edge-AI wearable assistive device (**Nethra**) for visually impaired an
 
 ## 2. Hardware Architecture & Phased Roadmap
 
-### Phase 1: Desktop / Laptop Prototype (Current Phase)
-- **Host Compute**: Cross-platform Laptop (Windows with NVIDIA CUDA / CPU or Apple M1–M4 Mac with MPS) running Python, OpenCV, and YOLO11 Nano (`yolo11n`).
-- **Vision Capture**:
-  - **macOS + iPhone**: iPhone Ultra-Wide lens streaming via native macOS Continuity Camera (0.5x zoom mode) at 640×480 resolution.
-  - **Windows + Android**: Android camera streaming over USB ADB port-forwarding (`adb forward`) or DroidCam / IP Webcam at 640×480 resolution.
-- **Haptic Simulation & BLE Output**: Real-time HUD visual telemetry bars with PWM duty cycles (0% to 100%) for Left and Right wristbands, plus BLE GATT output to ESP32-C3 wristbands.
-- **Ears-Free Design Philosophy**: Visual/spatial guidance is delivered via tactile vibration rather than continuous spoken audio, preserving the user's natural hearing for spatial awareness and echolocation.
-
-### Phase 2: Wearable Pocket Unit (Future Production Phase)
-- **Pocket Compute Unit**: Power-bank-sized device (e.g., Raspberry Pi 5 with Hailo AI HAT+ neural accelerator running at 30+ FPS, or dedicated Snapdragon/Apple NPU motherboard) worn in a pocket or on a belt.
-- **Wearable Glasses**: Ultra-lightweight glasses containing an ultra-wide camera, microphone, and bone-conduction speaker. Zero heavy compute or hot batteries on the head.
-- **Haptic Wristbands**: Left and right wristbands equipped with vibration motors driven by PWM signals corresponding to obstacle proximity and direction.
+### Target Wearable System Architecture
+- **Host Edge Compute Unit**: Apple Silicon MacBook (M1–M4 Mac with Metal Performance Shaders GPU acceleration, or Windows laptop) running the L0–L5 Nethra pipeline at 30+ FPS.
+- **Wearable Head / Face Smartphone Mount**: A custom head-mounted glasses/face holder positions the smartphone at eye level for hands-free, first-person ultra-wide vision, streaming live camera video to the Mac via Continuity Camera, Wi-Fi IP stream, or USB.
+- **Dual Wireless Haptic Wristbands (Left & Right)**: Two custom-built wristbands connected wirelessly (BLE / Wi-Fi) to the Mac. Each wristband integrates an **ESP32-C3 microcontroller**, a **3.7V rechargeable Li-Po battery**, a **charging controller module (TP4056 USB-C with protection)**, and a **vibration motor/driver** driven by real-time PWM and pattern commands.
+- **Ears-Free Design Philosophy**: Spatial obstacle guidance is delivered via left/right tactile vibration rather than continuous spoken audio, preserving the user's natural hearing for traffic awareness and echolocation.
 
 ---
 
